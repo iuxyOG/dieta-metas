@@ -10,8 +10,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Calorias Rosa Premium",
-  description: "App de rastreio de calorias da Jhullya Isabela",
+  title: "Dietas Da Jhullya",
+  description: "Painel de dieta da Jullya",
+  icons: {
+    icon: "/heart.svg",
+    shortcut: "/heart.svg",
+    apple: "/heart.svg",
+  },
 };
 
 const themeInitializer = `

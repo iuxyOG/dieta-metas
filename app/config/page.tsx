@@ -7,68 +7,64 @@ import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { DEFAULT_META_KCAL, toDateKey, type DailyState } from "@/lib/data";
+import { buildStarterDay, DEFAULT_META_KCAL, toDateKey } from "@/lib/data";
+import { fetchTrackerSnapshot, patchTracker } from "@/lib/tracker-api";
 
-const LOGS_STORAGE_KEY = "calorias.logs.v1";
-const META_STORAGE_KEY = "calorias.meta.v1";
 const THEME_STORAGE_KEY = "calorias.theme.v1";
-
-type LogsMap = Record<string, DailyState>;
-
-function readLogs(): LogsMap {
-  try {
-    const raw = window.localStorage.getItem(LOGS_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    return JSON.parse(raw) as LogsMap;
-  } catch {
-    return {};
-  }
-}
-
-function saveLogs(logs: LogsMap) {
-  window.localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(logs));
-}
 
 export default function ConfigPage() {
   const [meta, setMeta] = useState(String(DEFAULT_META_KCAL));
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    const storedMeta = window.localStorage.getItem(META_STORAGE_KEY);
-    if (storedMeta) {
-      setMeta(storedMeta);
-    } else {
-      setMeta(String(DEFAULT_META_KCAL));
-    }
+    let active = true;
+
+    void fetchTrackerSnapshot()
+      .then((snapshot) => {
+        if (!active) {
+          return;
+        }
+        setMeta(String(snapshot.meta));
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setMeta(String(DEFAULT_META_KCAL));
+      });
 
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     const dark = storedTheme === "dark";
     setIsDark(dark);
     document.documentElement.classList.toggle("dark", dark);
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const saveMeta = () => {
+  const saveMeta = async () => {
     const parsed = Number(meta);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return;
     }
 
-    const normalized = String(Math.round(parsed));
-    window.localStorage.setItem(META_STORAGE_KEY, normalized);
+    const normalizedMeta = Math.round(parsed);
+    setMeta(String(normalizedMeta));
 
+    const snapshot = await fetchTrackerSnapshot();
     const todayKey = toDateKey();
-    const logs = readLogs();
-    const today = logs[todayKey];
-
-    if (today) {
-      logs[todayKey] = {
+    const today = snapshot.logs[todayKey] ?? buildStarterDay(todayKey, normalizedMeta);
+    const ok = await patchTracker({
+      meta: normalizedMeta,
+      daily: {
         ...today,
-        meta: Number(normalized),
-      };
-      saveLogs(logs);
+        meta: normalizedMeta,
+      },
+    });
+
+    if (!ok) {
+      setMeta(String(snapshot.meta));
     }
   };
 
@@ -79,9 +75,9 @@ export default function ConfigPage() {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextDark ? "dark" : "light");
   };
 
-  const exportCsv = () => {
-    const logs = readLogs();
-    const today = logs[toDateKey()];
+  const exportCsv = async () => {
+    const snapshot = await fetchTrackerSnapshot();
+    const today = snapshot.logs[toDateKey()];
     if (!today) {
       return;
     }

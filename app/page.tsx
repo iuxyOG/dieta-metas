@@ -24,35 +24,9 @@ import {
   type LoggedFood,
   type Refeicao,
 } from "@/lib/data";
+import { fetchTrackerSnapshot, patchTracker, type LogsMap } from "@/lib/tracker-api";
 
-const LOGS_STORAGE_KEY = "calorias.logs.v1";
 const RECENT_STORAGE_KEY = "calorias.recent.v1";
-const META_STORAGE_KEY = "calorias.meta.v1";
-
-type LogsMap = Record<string, DailyState>;
-
-function parseLogs(): LogsMap {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LOGS_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-    return JSON.parse(raw) as LogsMap;
-  } catch {
-    return {};
-  }
-}
-
-function persistLogs(logs: LogsMap) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(logs));
-}
 
 function parseRecentIds(): string[] {
   if (typeof window === "undefined") {
@@ -74,6 +48,7 @@ function parseRecentIds(): string[] {
 
 export default function HomePage() {
   const [foods, setFoods] = useState<FoodRecord[]>(buildInitialFoods());
+  const [logsMap, setLogsMap] = useState<LogsMap>({});
   const [daily, setDaily] = useState<DailyState | null>(null);
   const [yesterdayItems, setYesterdayItems] = useState<LoggedFood[]>([]);
   const [recentFoodIds, setRecentFoodIds] = useState<string[]>([]);
@@ -81,42 +56,44 @@ export default function HomePage() {
   const [selectedMeal, setSelectedMeal] = useState<Refeicao>("BREAKFAST");
 
   useEffect(() => {
-    try {
+    let active = true;
+
+    const loadTracker = async () => {
       const todayKey = toDateKey();
       const yesterdayDate = new Date();
       yesterdayDate.setDate(yesterdayDate.getDate() - 1);
       const yesterdayKey = toDateKey(yesterdayDate);
 
-      const logs = parseLogs();
-      const savedMetaRaw = window.localStorage.getItem(META_STORAGE_KEY);
-      const savedMeta = Number(savedMetaRaw ?? DEFAULT_META_KCAL);
-      const meta = Number.isFinite(savedMeta) && savedMeta > 0 ? Math.round(savedMeta) : DEFAULT_META_KCAL;
+      const snapshot = await fetchTrackerSnapshot();
+      const maybeToday = snapshot.logs[todayKey];
+      const todayState = maybeToday ?? buildStarterDay(todayKey, snapshot.meta);
+      const nextLogs = { ...snapshot.logs, [todayKey]: todayState };
 
-      const maybeToday = logs[todayKey];
-      const todayState =
-        maybeToday && typeof maybeToday === "object" && Array.isArray(maybeToday.items)
-          ? maybeToday
-          : buildStarterDay(todayKey, meta);
+      if (!maybeToday) {
+        void patchTracker({ daily: todayState });
+      }
 
-      const normalizedToday: DailyState = {
-        ...todayState,
-        dateKey: typeof todayState.dateKey === "string" ? todayState.dateKey : todayKey,
-        meta: Number.isFinite(todayState.meta) && todayState.meta > 0 ? todayState.meta : meta,
-        items: Array.isArray(todayState.items) ? todayState.items : [],
-      };
+      if (!active) {
+        return;
+      }
 
-      logs[todayKey] = normalizedToday;
-      persistLogs(logs);
-
-      setDaily(normalizedToday);
-      setYesterdayItems(logs[yesterdayKey]?.items ?? []);
+      setLogsMap(nextLogs);
+      setDaily(todayState);
+      setYesterdayItems(snapshot.logs[yesterdayKey]?.items ?? []);
       setRecentFoodIds(parseRecentIds());
-    } catch {
+    };
+
+    void loadTracker().catch(() => {
+      if (!active) {
+        return;
+      }
+
       const fallback = buildStarterDay(toDateKey(), DEFAULT_META_KCAL);
       setDaily(fallback);
+      setLogsMap({ [fallback.dateKey]: fallback });
       setYesterdayItems([]);
-      setRecentFoodIds([]);
-    }
+      setRecentFoodIds(parseRecentIds());
+    });
 
     void fetch("/api/foods")
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Falha ao carregar alimentos"))))
@@ -146,6 +123,10 @@ export default function HomePage() {
       .catch(() => {
         setFoods(buildInitialFoods());
       });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const updateDaily = (updater: (prev: DailyState) => DailyState) => {
@@ -155,9 +136,8 @@ export default function HomePage() {
       }
 
       const next = updater(prev);
-      const logs = parseLogs();
-      logs[next.dateKey] = next;
-      persistLogs(logs);
+      setLogsMap((current) => ({ ...current, [next.dateKey]: next }));
+      void patchTracker({ daily: next });
       return next;
     });
   };
@@ -226,7 +206,7 @@ export default function HomePage() {
   };
 
   const applyDefaultGoal = () => {
-    window.localStorage.setItem(META_STORAGE_KEY, String(DEFAULT_META_KCAL));
+    void patchTracker({ meta: DEFAULT_META_KCAL });
     updateDaily((prev) => ({
       ...prev,
       meta: DEFAULT_META_KCAL,
@@ -234,7 +214,10 @@ export default function HomePage() {
   };
 
   const repeatYesterdayMeal = (meal: Refeicao) => {
-    const toClone = yesterdayItems.filter((item) => item.refeicao === meal);
+    const todayDate = new Date();
+    todayDate.setDate(todayDate.getDate() - 1);
+    const yesterdayKey = toDateKey(todayDate);
+    const toClone = (logsMap[yesterdayKey]?.items ?? yesterdayItems).filter((item) => item.refeicao === meal);
     if (toClone.length === 0) {
       return;
     }

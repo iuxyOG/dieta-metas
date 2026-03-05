@@ -15,7 +15,7 @@ model User {
 model Food {
   id          String   @id @default(cuid())
   name        String
-  porcao      String   // "200g", "1 prato"
+  porcao      String // "200g", "1 prato"
   kcalPorcao  Int
   proteina    Float?
   carboidrato Float?
@@ -26,21 +26,57 @@ model Food {
 }
 
 model DailyLog {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   date      DateTime
-  meta      Int      @default(2500)
-  consumido Int      @default(0)
-  createdAt DateTime @default(now())
+  dateKey   String    @unique
+  meta      Int       @default(2500)
+  consumido Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  items     LogItem[]
 }
 
 model LogItem {
-  id         String
-  foodId     String
-  dailyLogId String
-  quantidade Float    @default(1.0)
-  refeicao   Refeicao
+  id          String
+  foodId      String
+  dailyLogId  String
+  quantidade  Float    @default(1.0)
+  refeicao    Refeicao
+  name        String
+  porcao      String
+  kcalPorcao  Int
+  proteina    Float    @default(0)
+  carboidrato Float    @default(0)
+  gordura     Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  dailyLog DailyLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
 
   @@id([id, dailyLogId])
+  @@index([dailyLogId])
+}
+
+model WeeklyGoal {
+  id        String   @id @default(cuid())
+  weekKey   String   @unique
+  kcal      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WeightEntry {
+  id        String   @id @default(cuid())
+  dateKey   String   @unique
+  weight    Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum Refeicao {

@@ -67,5 +67,5 @@ npm run db:push
 
 ## Observação de dados
 
-- Calorias diárias, metas semanais e histórico de peso usam `localStorage` (foco em uso de 1 pessoa no celular).
-- Cadastro de alimentos usa API + Prisma (com fallback local em dev).
+- Persistência principal no PostgreSQL (Prisma): alimentos, metas, logs diários, metas semanais e histórico de peso.
+- Tema (`claro/escuro`) e lista de recentes seguem no `localStorage` do navegador (preferência do aparelho).

@@ -8,20 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_META_KCAL, fromDateKey, toDateKey, toKcal, type DailyState } from "@/lib/data";
+import { fetchTrackerSnapshot, patchTracker, type LogsMap, type WeightEntryRecord, type WeeklyGoalsMap } from "@/lib/tracker-api";
 
-const LOGS_STORAGE_KEY = "calorias.logs.v1";
-const META_STORAGE_KEY = "calorias.meta.v1";
-const WEEKLY_GOALS_STORAGE_KEY = "calorias.weekly-goals.v1";
-const WEIGHTS_STORAGE_KEY = "calorias.weights.v1";
-
-type LogsMap = Record<string, DailyState>;
-type WeeklyGoalsMap = Record<string, number>;
-
-type WeightEntry = {
-  id: string;
-  dateKey: string;
-  weight: number;
-};
+type WeightEntry = WeightEntryRecord;
 
 type DayPoint = {
   dateKey: string;
@@ -67,71 +56,6 @@ function consumedOfDay(log?: DailyState) {
     return 0;
   }
   return log.items.reduce((acc, item) => acc + item.kcalPorcao * item.quantidade, 0);
-}
-
-function loadLogs() {
-  try {
-    const raw = window.localStorage.getItem(LOGS_STORAGE_KEY);
-    if (!raw) {
-      return {} as LogsMap;
-    }
-    return JSON.parse(raw) as LogsMap;
-  } catch {
-    return {} as LogsMap;
-  }
-}
-
-function loadWeeklyGoals() {
-  try {
-    const raw = window.localStorage.getItem(WEEKLY_GOALS_STORAGE_KEY);
-    if (!raw) {
-      return {} as WeeklyGoalsMap;
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") {
-      return {} as WeeklyGoalsMap;
-    }
-
-    const validEntries = Object.entries(parsed).filter((entry): entry is [string, number] => {
-      return typeof entry[0] === "string" && typeof entry[1] === "number" && Number.isFinite(entry[1]);
-    });
-
-    return Object.fromEntries(validEntries);
-  } catch {
-    return {} as WeeklyGoalsMap;
-  }
-}
-
-function loadWeightEntries() {
-  try {
-    const raw = window.localStorage.getItem(WEIGHTS_STORAGE_KEY);
-    if (!raw) {
-      return [] as WeightEntry[];
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [] as WeightEntry[];
-    }
-
-    return parsed
-      .filter((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return false;
-        }
-        const value = entry as Record<string, unknown>;
-        return (
-          typeof value.id === "string" &&
-          typeof value.dateKey === "string" &&
-          typeof value.weight === "number" &&
-          Number.isFinite(value.weight)
-        );
-      })
-      .map((entry) => entry as WeightEntry);
-  } catch {
-    return [] as WeightEntry[];
-  }
 }
 
 function buildMetaChartPaths(days: DayPoint[]) {
@@ -222,18 +146,34 @@ export default function HistoricoPage() {
   const [weightDate, setWeightDate] = useState("");
 
   useEffect(() => {
-    const logs = loadLogs();
-    const goals = loadWeeklyGoals();
-    const weights = loadWeightEntries();
+    let active = true;
 
-    const localMeta = Number(window.localStorage.getItem(META_STORAGE_KEY) ?? DEFAULT_META_KCAL);
-    const normalizedMeta = Number.isFinite(localMeta) && localMeta > 0 ? Math.round(localMeta) : DEFAULT_META_KCAL;
+    void fetchTrackerSnapshot()
+      .then((snapshot) => {
+        if (!active) {
+          return;
+        }
 
-    setLogsMap(logs);
-    setWeeklyGoals(goals);
-    setWeightEntries(weights);
-    setDailyMeta(normalizedMeta);
-    setWeightDate(toDateKey());
+        setLogsMap(snapshot.logs);
+        setWeeklyGoals(snapshot.weeklyGoals);
+        setWeightEntries(snapshot.weights);
+        setDailyMeta(snapshot.meta);
+        setWeightDate(toDateKey());
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setLogsMap({});
+        setWeeklyGoals({});
+        setWeightEntries([]);
+        setDailyMeta(DEFAULT_META_KCAL);
+        setWeightDate(toDateKey());
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const currentWeekStart = useMemo(() => startOfWeek(new Date()), []);
@@ -335,18 +275,30 @@ export default function HistoricoPage() {
     return { diff, status: "estável", tone: "text-sky-500" };
   }, [latestWeight, previousWeight]);
 
-  const saveWeeklyGoal = () => {
+  const saveWeeklyGoal = async () => {
     const parsed = Number(weekGoalInput);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return;
     }
 
-    const next = { ...weeklyGoals, [currentWeekKey]: Math.round(parsed) };
+    const kcal = Math.round(parsed);
+    const next = { ...weeklyGoals, [currentWeekKey]: kcal };
     setWeeklyGoals(next);
-    window.localStorage.setItem(WEEKLY_GOALS_STORAGE_KEY, JSON.stringify(next));
+
+    const ok = await patchTracker({
+      weeklyGoal: {
+        weekKey: currentWeekKey,
+        kcal,
+      },
+    });
+
+    if (!ok) {
+      const snapshot = await fetchTrackerSnapshot();
+      setWeeklyGoals(snapshot.weeklyGoals);
+    }
   };
 
-  const registerWeight = () => {
+  const registerWeight = async () => {
     const parsed = Number(weightInput.replace(",", "."));
     if (!Number.isFinite(parsed) || parsed <= 0 || !weightDate) {
       return;
@@ -369,8 +321,19 @@ export default function HistoricoPage() {
         ];
 
     setWeightEntries(next);
-    window.localStorage.setItem(WEIGHTS_STORAGE_KEY, JSON.stringify(next));
     setWeightInput("");
+
+    const ok = await patchTracker({
+      weight: {
+        dateKey: weightDate,
+        weight: normalizedWeight,
+      },
+    });
+
+    if (!ok) {
+      const snapshot = await fetchTrackerSnapshot();
+      setWeightEntries(snapshot.weights);
+    }
   };
 
   const chartMeta = useMemo(() => buildMetaChartPaths(days30), [days30]);
