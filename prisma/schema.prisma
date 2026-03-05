@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id   String @id @default(cuid())
+  name String @default("Jhullya Isabela")
+}
+
+model Food {
+  id          String   @id @default(cuid())
+  name        String
+  porcao      String   // "200g", "1 prato"
+  kcalPorcao  Int
+  proteina    Float?
+  carboidrato Float?
+  gordura     Float?
+  fotoUrl     String?
+  createdAt   DateTime @default(now())
+  favoritos   Boolean  @default(false)
+}
+
+model DailyLog {
+  id        String   @id @default(cuid())
+  date      DateTime
+  meta      Int      @default(2500)
+  consumido Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model LogItem {
+  id         String
+  foodId     String
+  dailyLogId String
+  quantidade Float    @default(1.0)
+  refeicao   Refeicao
+
+  @@id([id, dailyLogId])
+}
+
+enum Refeicao {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACKS
+}
