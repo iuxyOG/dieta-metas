@@ -22,7 +22,7 @@ export function ProgressRing({ consumido, meta }: ProgressRingProps) {
       <div className="pointer-events-none absolute -right-10 top-0 h-28 w-28 rounded-full bg-white/45 blur-2xl dark:bg-white/5" />
 
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-textoPrim dark:text-foreground">Seu progresso</h2>
+        <h2 className="text-lg font-bold text-textoPrim dark:text-foreground">Meta de calorias</h2>
         <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-botao dark:bg-black/15">
           {statusLabel}
         </span>
@@ -69,9 +69,9 @@ export function ProgressRing({ consumido, meta }: ProgressRingProps) {
           </text>
         </svg>
 
-        <div className="w-full space-y-3 md:max-w-[220px]">
+        <div className="grid w-full gap-3 md:max-w-[260px]">
           <div className="rounded-2xl bg-white/72 p-3 dark:bg-black/10">
-            <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Meta</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Meta do dia</p>
             <p className="mt-1 inline-flex items-center gap-1 text-lg font-bold text-textoPrim dark:text-foreground">
               <Target className="h-4 w-4 text-botao" />
               {toKcal(meta)} kcal
@@ -86,7 +86,10 @@ export function ProgressRing({ consumido, meta }: ProgressRingProps) {
             </p>
           </div>
 
-          <p className="text-center text-sm font-semibold text-botao">{toKcal(restante)} restantes</p>
+          <div className="rounded-2xl bg-white/72 p-3 dark:bg-black/10">
+            <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Restantes</p>
+            <p className="mt-1 text-lg font-bold text-botao">{toKcal(restante)} kcal</p>
+          </div>
         </div>
       </div>
     </div>

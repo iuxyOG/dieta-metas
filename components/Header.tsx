@@ -46,7 +46,8 @@ export function Header({
   showDesktopNav = true,
 }: HeaderProps) {
   const pathname = usePathname();
-  const heroTitle = title ?? `Olá, ${profileName}`;
+  const firstName = profileName.trim().split(/\s+/)[0] || profileName;
+  const heroTitle = title ?? `Bem-vinda, ${firstName}`;
 
   return (
     <header className="relative overflow-hidden rounded-[30px] border border-white/65 bg-[linear-gradient(145deg,rgba(255,255,255,0.92)_0%,rgba(253,238,245,0.9)_46%,rgba(247,203,224,0.72)_100%)] p-4 shadow-[0_18px_50px_-28px_rgba(230,75,141,0.82)] backdrop-blur dark:border-white/10 dark:bg-[linear-gradient(145deg,rgba(40,25,43,0.96)_0%,rgba(55,33,59,0.94)_52%,rgba(65,37,58,0.9)_100%)] dark:shadow-[0_18px_50px_-28px_rgba(0,0,0,0.92)] md:p-6">
@@ -61,10 +62,10 @@ export function Header({
             </p>
             <h1 className="mt-3 text-[1.85rem] font-black leading-tight tracking-tight text-textoPrim dark:text-foreground md:text-[2.55rem]">
               {heroTitle}
-              {!title ? <span className="ml-2 text-botao">💗</span> : null}
+              {!title ? <span className="ml-2 text-botao">♥</span> : null}
             </h1>
             <p className="mt-2 max-w-xl text-sm font-medium text-textoSec dark:text-muted-foreground">
-              {description ?? "Seu painel diário de dieta, progresso e rotina pessoal."}
+              {description ?? "Seu espaço pessoal para cuidar da rotina, das metas e das refeições do dia."}
             </p>
             {showDate ? (
               <p className="mt-2 text-sm font-semibold capitalize text-textoPrim/75 dark:text-foreground/75">{getPtDateLabel()}</p>
