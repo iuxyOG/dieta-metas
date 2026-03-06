@@ -15,7 +15,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mealLabels, parseGramsFromPortion, type FoodRecord, type Refeicao, toKcal } from "@/lib/data";
+import {
+  foodCategoryLabels,
+  getFoodCategoryLabel,
+  mealLabels,
+  parseGramsFromPortion,
+  type FoodCategory,
+  type FoodRecord,
+  type Refeicao,
+  toKcal,
+} from "@/lib/data";
 
 type FoodModalProps = {
   open: boolean;
@@ -54,6 +63,7 @@ function toQuantity(mode: QuantityMode, grams: number, selectedFood: FoodRecord 
 export function FoodModal({ open, onOpenChange, meal, foods, recentFoods, onAddFood }: FoodModalProps) {
   const [activeTab, setActiveTab] = useState<"favoritos" | "recentes" | "todos">("favoritos");
   const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<FoodCategory | "ALL">("ALL");
   const [selectedFoodId, setSelectedFoodId] = useState<string>("");
   const [quantityMode, setQuantityMode] = useState<QuantityMode>("1");
   const [grams, setGrams] = useState(100);
@@ -77,15 +87,17 @@ export function FoodModal({ open, onOpenChange, meal, foods, recentFoods, onAddF
 
   const filteredFoods = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) {
-      return tabFoods;
-    }
-    return tabFoods.filter((food) => food.name.toLowerCase().includes(query));
-  }, [search, tabFoods]);
+    return tabFoods.filter((food) => {
+      const matchesQuery = !query || food.name.toLowerCase().includes(query);
+      const matchesCategory = activeCategory === "ALL" || food.category === activeCategory;
+      return matchesQuery && matchesCategory;
+    });
+  }, [activeCategory, search, tabFoods]);
 
   useEffect(() => {
     if (!open) {
       setSearch("");
+      setActiveCategory("ALL");
       setSelectedFoodId("");
       setQuantityMode("1");
       setGrams(100);
@@ -159,6 +171,34 @@ export function FoodModal({ open, onOpenChange, meal, foods, recentFoods, onAddF
             </TabsList>
           </Tabs>
 
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            <button
+              type="button"
+              onClick={() => setActiveCategory("ALL")}
+              className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                activeCategory === "ALL"
+                  ? "bg-botao text-white"
+                  : "bg-white text-textoSec hover:bg-rosaClaro dark:bg-card dark:text-muted-foreground"
+              }`}
+            >
+              Todas
+            </button>
+            {Object.entries(foodCategoryLabels).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setActiveCategory(value as FoodCategory)}
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  activeCategory === value
+                    ? "bg-botao text-white"
+                    : "bg-white text-textoSec hover:bg-rosaClaro dark:bg-card dark:text-muted-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="max-h-60 space-y-2 overflow-y-auto rounded-2xl border border-borda bg-white p-2 dark:border-border dark:bg-card">
             {filteredFoods.length === 0 ? (
               <p className="px-2 py-4 text-center text-sm text-textoSec dark:text-muted-foreground">Nenhum alimento encontrado.</p>
@@ -176,6 +216,9 @@ export function FoodModal({ open, onOpenChange, meal, foods, recentFoods, onAddF
                     }`}
                   >
                     <div className="min-w-0 pr-2">
+                      <p className="mb-1 inline-flex rounded-full bg-rosaClaro px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-botao dark:bg-secondary dark:text-primary">
+                        {getFoodCategoryLabel(food.category)}
+                      </p>
                       <p className="truncate text-sm font-semibold text-textoPrim dark:text-foreground">
                         {food.name} {food.favoritos ? "⭐" : ""}
                       </p>

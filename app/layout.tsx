@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 
+import { AppBottomNav } from "@/components/AppBottomNav";
+
 import "./globals.css";
 
 const geistSans = localFont({
@@ -48,7 +50,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitializer }} />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen`}>{children}</body>
+      <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen`}>
+        {children}
+        <AppBottomNav />
+      </body>
     </html>
   );
 }

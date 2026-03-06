@@ -8,13 +8,23 @@ datasource db {
 }
 
 model User {
-  id   String @id @default(cuid())
-  name String @default("Jhullya Isabela")
+  id             String         @id @default(cuid())
+  name           String         @default("Jhullya Isabela")
+  goalType       GoalType       @default(MAINTAIN)
+  targetWeight   Float?
+  weeklyPace     Float?
+  targetDate     DateTime?
+  dailyWaterGoal Int            @default(8)
+  focus          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  checkIns       DailyCheckIn[]
 }
 
 model Food {
   id          String   @id @default(cuid())
   name        String
+  category    FoodCategory @default(OTHER)
   porcao      String // "200g", "1 prato"
   kcalPorcao  Int
   proteina    Float?
@@ -79,9 +89,43 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 }
 
+model DailyCheckIn {
+  id           String   @id @default(cuid())
+  dateKey      String   @unique
+  mood         Int      @default(3)
+  energy       Int      @default(3)
+  hunger       Int      @default(3)
+  waterGlasses Int      @default(0)
+  sleepHours   Float    @default(0)
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  userId       String?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
 enum Refeicao {
   BREAKFAST
   LUNCH
   DINNER
   SNACKS
+}
+
+enum GoalType {
+  CUT
+  GAIN
+  MAINTAIN
+}
+
+enum FoodCategory {
+  PROTEIN
+  CARB
+  FRUIT
+  VEGETABLE
+  DAIRY
+  DRINK
+  SNACK
+  SWEET
+  OTHER
 }

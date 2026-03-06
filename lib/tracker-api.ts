@@ -1,4 +1,14 @@
-import { DEFAULT_META_KCAL, type DailyState, type MealTemplateRecord, type WeekdayGoalsMap } from "@/lib/data";
+import {
+  DEFAULT_META_KCAL,
+  DEFAULT_PROFILE,
+  type DailyCheckInRecord,
+  type DailyState,
+  type MacroTargets,
+  type MealTemplateRecord,
+  type PersonalProfile,
+  type WeeklyMealPlan,
+  type WeekdayGoalsMap,
+} from "@/lib/data";
 
 export type WeeklyGoalsMap = Record<string, number>;
 
@@ -12,16 +22,23 @@ export type LogsMap = Record<string, DailyState>;
 
 export type TrackerSnapshot = {
   meta: number;
+  profile: PersonalProfile;
+  macroTargets: MacroTargets | null;
   logs: LogsMap;
   weeklyGoals: WeeklyGoalsMap;
+  weeklyMealPlan: WeeklyMealPlan;
   weekdayGoals: WeekdayGoalsMap;
   weights: WeightEntryRecord[];
+  checkIns: DailyCheckInRecord[];
   mealTemplates: MealTemplateRecord[];
 };
 
 export type TrackerPatchPayload = {
   meta?: number;
+  profile?: PersonalProfile;
+  macroTargets?: MacroTargets;
   daily?: DailyState;
+  weeklyMealPlan?: WeeklyMealPlan;
   weekdayGoals?: WeekdayGoalsMap;
   weeklyGoal?: {
     weekKey: string;
@@ -31,6 +48,7 @@ export type TrackerPatchPayload = {
     dateKey: string;
     weight: number;
   };
+  checkIn?: DailyCheckInRecord;
   mealTemplates?: MealTemplateRecord[];
 };
 
@@ -53,10 +71,21 @@ export async function fetchTrackerSnapshot(): Promise<TrackerSnapshot> {
   const meta = Number(payload.meta);
   return {
     meta: Number.isFinite(meta) && meta > 0 ? Math.round(meta) : DEFAULT_META_KCAL,
+    profile:
+      payload.profile && typeof payload.profile === "object"
+        ? {
+            ...DEFAULT_PROFILE,
+            ...payload.profile,
+          }
+        : DEFAULT_PROFILE,
+    macroTargets:
+      payload.macroTargets && typeof payload.macroTargets === "object" ? payload.macroTargets : null,
     logs: payload.logs && typeof payload.logs === "object" ? payload.logs : {},
     weeklyGoals: payload.weeklyGoals && typeof payload.weeklyGoals === "object" ? payload.weeklyGoals : {},
+    weeklyMealPlan: payload.weeklyMealPlan && typeof payload.weeklyMealPlan === "object" ? payload.weeklyMealPlan : {},
     weekdayGoals: payload.weekdayGoals && typeof payload.weekdayGoals === "object" ? payload.weekdayGoals : {},
     weights: Array.isArray(payload.weights) ? payload.weights : [],
+    checkIns: Array.isArray(payload.checkIns) ? payload.checkIns : [],
     mealTemplates: Array.isArray(payload.mealTemplates) ? payload.mealTemplates : [],
   };
 }

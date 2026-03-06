@@ -1,0 +1,43 @@
+-- CreateEnum
+CREATE TYPE "GoalType" AS ENUM ('CUT', 'GAIN', 'MAINTAIN');
+
+-- CreateEnum
+CREATE TYPE "FoodCategory" AS ENUM ('PROTEIN', 'CARB', 'FRUIT', 'VEGETABLE', 'DAIRY', 'DRINK', 'SNACK', 'SWEET', 'OTHER');
+
+-- AlterTable
+ALTER TABLE "User"
+ADD COLUMN "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN "dailyWaterGoal" INTEGER NOT NULL DEFAULT 8,
+ADD COLUMN "focus" TEXT,
+ADD COLUMN "goalType" "GoalType" NOT NULL DEFAULT 'MAINTAIN',
+ADD COLUMN "targetDate" TIMESTAMP(3),
+ADD COLUMN "targetWeight" DOUBLE PRECISION,
+ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN "weeklyPace" DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "Food"
+ADD COLUMN "category" "FoodCategory" NOT NULL DEFAULT 'OTHER';
+
+-- CreateTable
+CREATE TABLE "DailyCheckIn" (
+    "id" TEXT NOT NULL,
+    "dateKey" TEXT NOT NULL,
+    "mood" INTEGER NOT NULL DEFAULT 3,
+    "energy" INTEGER NOT NULL DEFAULT 3,
+    "hunger" INTEGER NOT NULL DEFAULT 3,
+    "waterGlasses" INTEGER NOT NULL DEFAULT 0,
+    "sleepHours" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "note" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT,
+
+    CONSTRAINT "DailyCheckIn_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DailyCheckIn_dateKey_key" ON "DailyCheckIn"("dateKey");
+
+-- AddForeignKey
+ALTER TABLE "DailyCheckIn" ADD CONSTRAINT "DailyCheckIn_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

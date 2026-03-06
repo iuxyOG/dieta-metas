@@ -7,10 +7,12 @@ import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { buildInitialFoods, type FoodRecord } from "@/lib/data";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildInitialFoods, foodCategoryLabels, getFoodCategoryLabel, type FoodCategory, type FoodRecord } from "@/lib/data";
 
 type FormState = {
   name: string;
+  category: FoodCategory;
   porcao: string;
   kcalPorcao: string;
   proteina: string;
@@ -22,6 +24,7 @@ type FormState = {
 
 const emptyForm: FormState = {
   name: "",
+  category: "OTHER",
   porcao: "",
   kcalPorcao: "",
   proteina: "",
@@ -34,6 +37,7 @@ const emptyForm: FormState = {
 function formFromFood(food: FoodRecord): FormState {
   return {
     name: food.name,
+    category: food.category,
     porcao: food.porcao,
     kcalPorcao: String(food.kcalPorcao),
     proteina: food.proteina?.toString() ?? "",
@@ -57,13 +61,22 @@ function toNumberOrNull(value: string): number | null {
 export default function AlimentosPage() {
   const [foods, setFoods] = useState<FoodRecord[]>(buildInitialFoods());
   const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<FoodCategory | "ALL">("ALL");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fetchFoods = useCallback(async () => {
-    const response = await fetch(`/api/foods${query ? `?q=${encodeURIComponent(query)}` : ""}`);
+    const params = new URLSearchParams();
+    if (query) {
+      params.set("q", query);
+    }
+    if (categoryFilter !== "ALL") {
+      params.set("category", categoryFilter);
+    }
+
+    const response = await fetch(`/api/foods${params.size ? `?${params.toString()}` : ""}`);
     if (!response.ok) {
       setErrorMessage("Nao foi possivel carregar a lista de alimentos do banco.");
       return;
@@ -74,7 +87,7 @@ export default function AlimentosPage() {
       setFoods(data);
       setErrorMessage(null);
     }
-  }, [query]);
+  }, [categoryFilter, query]);
 
   useEffect(() => {
     void fetchFoods();
@@ -100,6 +113,7 @@ export default function AlimentosPage() {
     setSaving(true);
     const payload = {
       name: form.name.trim(),
+      category: form.category,
       porcao: form.porcao.trim(),
       kcalPorcao: Number(form.kcalPorcao),
       proteina: toNumberOrNull(form.proteina),
@@ -162,8 +176,12 @@ export default function AlimentosPage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-4 p-4 pb-8 md:p-6">
-      <Header />
+    <main className="mx-auto w-full max-w-7xl space-y-4 p-3 pb-28 md:space-y-5 md:p-6 md:pb-8">
+      <Header
+        title="Alimentos"
+        description="Monte sua biblioteca pessoal com categorias, favoritos e fotos."
+        showDate={false}
+      />
 
       {errorMessage ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -185,6 +203,21 @@ export default function AlimentosPage() {
                 className="h-11 rounded-xl border-borda dark:border-border dark:bg-card dark:text-foreground"
                 placeholder="Nome do alimento"
               />
+              <Select
+                value={form.category}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, category: value as FoodCategory }))}
+              >
+                <SelectTrigger className="h-11 rounded-xl border-borda dark:border-border dark:bg-card dark:text-foreground">
+                  <SelectValue placeholder="Categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(foodCategoryLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <div className="grid grid-cols-2 gap-2">
                 <Input
                   required
@@ -279,12 +312,42 @@ export default function AlimentosPage() {
             <CardTitle className="text-lg text-textoPrim dark:text-foreground">Lista de alimentos</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-11 rounded-xl border-borda dark:border-border dark:bg-card dark:text-foreground"
-              placeholder="Buscar alimento"
-            />
+            <div className="space-y-3">
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="h-11 rounded-xl border-borda dark:border-border dark:bg-card dark:text-foreground"
+                placeholder="Buscar alimento"
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter("ALL")}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    categoryFilter === "ALL"
+                      ? "bg-botao text-white"
+                      : "bg-rosaClaro text-textoSec hover:bg-rosa dark:bg-secondary dark:text-muted-foreground"
+                  }`}
+                >
+                  Todas
+                </button>
+                {Object.entries(foodCategoryLabels).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setCategoryFilter(value as FoodCategory)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      categoryFilter === value
+                        ? "bg-botao text-white"
+                        : "bg-rosaClaro text-textoSec hover:bg-rosa dark:bg-secondary dark:text-muted-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="max-h-[58dvh] space-y-2 overflow-y-auto pr-1">
               {foods.map((food) => (
@@ -294,6 +357,9 @@ export default function AlimentosPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
+                      <p className="mb-1 inline-flex rounded-full bg-white/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-botao dark:bg-card dark:text-primary">
+                        {getFoodCategoryLabel(food.category)}
+                      </p>
                       <h3 className="text-sm font-semibold text-textoPrim dark:text-foreground">{food.name}</h3>
                       <p className="text-xs text-textoSec dark:text-muted-foreground">
                         {food.porcao} • {food.kcalPorcao} kcal

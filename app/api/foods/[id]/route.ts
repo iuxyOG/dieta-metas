@@ -1,10 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
+import { type FoodCategory } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 
 type FoodUpdatePayload = {
   name?: string;
+  category?: FoodCategory;
   porcao?: string;
   kcalPorcao?: number;
   proteina?: number | null;
@@ -13,6 +15,18 @@ type FoodUpdatePayload = {
   fotoUrl?: string | null;
   favoritos?: boolean;
 };
+
+const FOOD_CATEGORIES: FoodCategory[] = [
+  "PROTEIN",
+  "CARB",
+  "FRUIT",
+  "VEGETABLE",
+  "DAIRY",
+  "DRINK",
+  "SNACK",
+  "SWEET",
+  "OTHER",
+];
 
 function toNumberOrNull(value: unknown): number | null | undefined {
   if (value === undefined) {
@@ -41,6 +55,15 @@ function parsePayload(raw: unknown): FoodUpdatePayload | null {
       return null;
     }
     payload.name = name;
+  }
+
+  if (body.category !== undefined) {
+    const category = String(body.category).trim() as FoodCategory;
+    if (!FOOD_CATEGORIES.includes(category)) {
+      return null;
+    }
+
+    payload.category = category;
   }
 
   if (body.porcao !== undefined) {

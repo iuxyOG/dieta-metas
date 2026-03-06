@@ -1,11 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { initialFoods } from "@/lib/data";
+import { initialFoods, type FoodCategory } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 
 type FoodPayload = {
   name: string;
+  category: FoodCategory;
   porcao: string;
   kcalPorcao: number;
   proteina?: number | null;
@@ -16,6 +17,17 @@ type FoodPayload = {
 };
 
 const FOODS_SEED_KEY = "foods-seeded-at";
+const FOOD_CATEGORIES: FoodCategory[] = [
+  "PROTEIN",
+  "CARB",
+  "FRUIT",
+  "VEGETABLE",
+  "DAIRY",
+  "DRINK",
+  "SNACK",
+  "SWEET",
+  "OTHER",
+];
 
 function toNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") {
@@ -33,6 +45,8 @@ function parsePayload(raw: unknown): FoodPayload | null {
 
   const body = raw as Record<string, unknown>;
   const name = String(body.name ?? "").trim();
+  const maybeCategory = String(body.category ?? "").trim() as FoodCategory;
+  const category = FOOD_CATEGORIES.includes(maybeCategory) ? maybeCategory : "OTHER";
   const porcao = String(body.porcao ?? "").trim();
   const kcal = Number(body.kcalPorcao);
 
@@ -42,6 +56,7 @@ function parsePayload(raw: unknown): FoodPayload | null {
 
   return {
     name,
+    category,
     porcao,
     kcalPorcao: Math.round(kcal),
     proteina: toNumberOrNull(body.proteina),
@@ -65,6 +80,7 @@ async function ensureSeedData() {
         await tx.food.createMany({
           data: initialFoods.map((food) => ({
             name: food.name,
+            category: food.category ?? "OTHER",
             porcao: food.porcao,
             kcalPorcao: food.kcalPorcao,
             proteina: food.proteina ?? null,
@@ -89,20 +105,26 @@ async function ensureSeedData() {
 }
 
 export async function GET(request: Request) {
-  const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
+  const params = new URL(request.url).searchParams;
+  const query = params.get("q")?.trim() ?? "";
+  const categoryParam = params.get("category")?.trim() ?? "";
+  const category = FOOD_CATEGORIES.includes(categoryParam as FoodCategory) ? (categoryParam as FoodCategory) : null;
 
   try {
     await ensureSeedData();
 
     const foods = await prisma.food.findMany({
-      where: query
-        ? {
-            name: {
-              contains: query,
-              mode: "insensitive",
-            },
-          }
-        : undefined,
+      where: {
+        ...(query
+          ? {
+              name: {
+                contains: query,
+                mode: "insensitive",
+              },
+            }
+          : {}),
+        ...(category ? { category } : {}),
+      },
       orderBy: [{ favoritos: "desc" }, { createdAt: "desc" }],
     });
 

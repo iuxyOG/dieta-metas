@@ -1,29 +1,27 @@
+import { Sparkles } from "lucide-react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { type MacroTargets } from "@/lib/data";
 
 type MacrosBarProps = {
   proteina: number;
   carboidrato: number;
   gordura: number;
-};
-
-const macroTargets = {
-  proteina: 110,
-  carboidrato: 250,
-  gordura: 80,
+  targets: MacroTargets;
 };
 
 function percentage(value: number, max: number) {
   return Math.max(0, Math.min(100, (value / max) * 100));
 }
 
-export function MacrosBar({ proteina, carboidrato, gordura }: MacrosBarProps) {
+export function MacrosBar({ proteina, carboidrato, gordura, targets }: MacrosBarProps) {
   const macros = [
     {
       label: "Proteína",
       short: "Prot",
       value: proteina,
-      target: macroTargets.proteina,
-      percent: percentage(proteina, macroTargets.proteina),
+      target: targets.proteina,
+      percent: percentage(proteina, targets.proteina),
       color: "bg-sucesso",
       text: "text-sucesso",
     },
@@ -31,8 +29,8 @@ export function MacrosBar({ proteina, carboidrato, gordura }: MacrosBarProps) {
       label: "Carboidrato",
       short: "Carbo",
       value: carboidrato,
-      target: macroTargets.carboidrato,
-      percent: percentage(carboidrato, macroTargets.carboidrato),
+      target: targets.carboidrato,
+      percent: percentage(carboidrato, targets.carboidrato),
       color: "bg-amber-400",
       text: "text-amber-500",
     },
@@ -40,8 +38,8 @@ export function MacrosBar({ proteina, carboidrato, gordura }: MacrosBarProps) {
       label: "Gordura",
       short: "Gord",
       value: gordura,
-      target: macroTargets.gordura,
-      percent: percentage(gordura, macroTargets.gordura),
+      target: targets.gordura,
+      percent: percentage(gordura, targets.gordura),
       color: "bg-botao",
       text: "text-botao",
     },
@@ -51,9 +49,16 @@ export function MacrosBar({ proteina, carboidrato, gordura }: MacrosBarProps) {
     <Card className="rounded-[26px] border-borda/75 bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.88)_100%)] shadow-[0_12px_28px_-18px_rgba(230,75,141,0.7)] dark:border-border dark:bg-[linear-gradient(145deg,rgba(35,28,40,0.96)_0%,rgba(39,35,52,0.92)_100%)] dark:shadow-[0_12px_28px_-18px_rgba(0,0,0,0.92)]">
       <CardHeader className="pb-2">
         <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Macros</CardTitle>
-        <p className="text-sm text-textoSec dark:text-muted-foreground">Distribuição do dia</p>
+        <p className="text-sm text-textoSec dark:text-muted-foreground">Distribuição do dia com metas personalizadas</p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-2xl bg-white/75 px-3 py-2 text-xs text-textoSec shadow-[0_8px_18px_-18px_rgba(15,23,42,0.45)] dark:bg-black/10 dark:text-muted-foreground">
+          <span className="inline-flex items-center gap-1 font-semibold text-botao">
+            <Sparkles className="h-3.5 w-3.5" />
+            Meta do plano
+          </span>{" "}
+          {targets.proteina}g de proteína, {targets.carboidrato}g de carbo e {targets.gordura}g de gordura.
+        </div>
         {macros.map((macro) => (
           <div key={macro.short} className="space-y-2 rounded-2xl bg-white/78 p-3 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.45)] dark:bg-black/10">
             <div className="flex items-center justify-between text-sm font-semibold">

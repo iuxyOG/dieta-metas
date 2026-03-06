@@ -1,14 +1,42 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, CalendarClock, LineChart, Scale, Save, Target, TrendingUp } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CalendarClock,
+  HeartPulse,
+  LineChart,
+  MoonStar,
+  Scale,
+  Save,
+  Target,
+  TrendingUp,
+  Waves,
+} from "lucide-react";
 
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { DEFAULT_META_KCAL, fromDateKey, toDateKey, toKcal, type DailyState } from "@/lib/data";
-import { fetchTrackerSnapshot, patchTracker, type LogsMap, type WeightEntryRecord, type WeeklyGoalsMap } from "@/lib/tracker-api";
+import {
+  DEFAULT_META_KCAL,
+  DEFAULT_PROFILE,
+  goalTypeLabels,
+  fromDateKey,
+  toDateKey,
+  toKcal,
+  type DailyCheckInRecord,
+  type DailyState,
+  type PersonalProfile,
+} from "@/lib/data";
+import {
+  fetchTrackerSnapshot,
+  patchTracker,
+  type LogsMap,
+  type WeightEntryRecord,
+  type WeeklyGoalsMap,
+} from "@/lib/tracker-api";
 
 type WeightEntry = WeightEntryRecord;
 
@@ -107,7 +135,6 @@ function buildWeightChartPaths(entries: WeightEntry[]) {
   const values = entries.map((entry) => entry.weight);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const delta = Math.max(0.5, max - min);
   const low = min - 0.2;
   const high = max + 0.2;
 
@@ -131,15 +158,16 @@ function buildWeightChartPaths(entries: WeightEntry[]) {
     pad,
     min: low,
     max: high,
-    delta,
     points,
   };
 }
 
 export default function HistoricoPage() {
+  const [profile, setProfile] = useState<PersonalProfile>(DEFAULT_PROFILE);
   const [logsMap, setLogsMap] = useState<LogsMap>({});
   const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoalsMap>({});
   const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([]);
+  const [checkIns, setCheckIns] = useState<DailyCheckInRecord[]>([]);
   const [dailyMeta, setDailyMeta] = useState(DEFAULT_META_KCAL);
   const [weekGoalInput, setWeekGoalInput] = useState(String(DEFAULT_META_KCAL * 7));
   const [weightInput, setWeightInput] = useState("");
@@ -155,9 +183,11 @@ export default function HistoricoPage() {
           return;
         }
 
+        setProfile(snapshot.profile);
         setLogsMap(snapshot.logs);
         setWeeklyGoals(snapshot.weeklyGoals);
         setWeightEntries(snapshot.weights);
+        setCheckIns(snapshot.checkIns);
         setDailyMeta(snapshot.meta);
         setWeightDate(toDateKey());
         setErrorMessage(null);
@@ -166,9 +196,11 @@ export default function HistoricoPage() {
         if (!active) {
           return;
         }
+        setProfile(DEFAULT_PROFILE);
         setLogsMap({});
         setWeeklyGoals({});
         setWeightEntries([]);
+        setCheckIns([]);
         setDailyMeta(DEFAULT_META_KCAL);
         setWeightDate(toDateKey());
         setErrorMessage("Nao foi possivel carregar o historico salvo no banco.");
@@ -260,6 +292,7 @@ export default function HistoricoPage() {
   );
 
   const latestWeight = sortedWeights[sortedWeights.length - 1];
+  const firstWeight = sortedWeights[0];
   const previousWeight = sortedWeights[sortedWeights.length - 2];
 
   const weightTrend = useMemo(() => {
@@ -278,9 +311,53 @@ export default function HistoricoPage() {
     return { diff, status: "estável", tone: "text-sky-500" };
   }, [latestWeight, previousWeight]);
 
+  const checkIns14 = useMemo(() => checkIns.slice(-14), [checkIns]);
+  const wellnessAverages = useMemo(() => {
+    if (checkIns14.length === 0) {
+      return null;
+    }
+
+    const totals = checkIns14.reduce(
+      (acc, entry) => {
+        acc.mood += entry.mood;
+        acc.energy += entry.energy;
+        acc.sleep += entry.sleepHours;
+        acc.water += entry.waterGlasses;
+        return acc;
+      },
+      { mood: 0, energy: 0, sleep: 0, water: 0 },
+    );
+
+    return {
+      mood: totals.mood / checkIns14.length,
+      energy: totals.energy / checkIns14.length,
+      sleep: totals.sleep / checkIns14.length,
+      water: totals.water / checkIns14.length,
+    };
+  }, [checkIns14]);
+
+  const adherence14 = useMemo(() => {
+    const sample = days30.slice(-14);
+    const activeDays = sample.filter((day) => day.consumido > 0);
+    if (activeDays.length === 0) {
+      return null;
+    }
+
+    const onTrackDays = activeDays.filter((day) => Math.abs(day.consumido - day.meta) <= day.meta * 0.1).length;
+    return Math.round((onTrackDays / activeDays.length) * 100);
+  }, [days30]);
+
+  const targetDelta = useMemo(() => {
+    if (!latestWeight || !profile.targetWeight) {
+      return null;
+    }
+    return Number((latestWeight.weight - profile.targetWeight).toFixed(1));
+  }, [latestWeight, profile.targetWeight]);
+
   const saveWeeklyGoal = async () => {
     const parsed = Number(weekGoalInput);
     if (!Number.isFinite(parsed) || parsed <= 0) {
+      setErrorMessage("Informe uma meta semanal valida.");
       return;
     }
 
@@ -310,6 +387,7 @@ export default function HistoricoPage() {
   const registerWeight = async () => {
     const parsed = Number(weightInput.replace(",", "."));
     if (!Number.isFinite(parsed) || parsed <= 0 || !weightDate) {
+      setErrorMessage("Informe data e peso validos.");
       return;
     }
 
@@ -361,8 +439,13 @@ export default function HistoricoPage() {
   }, [weightChartEntries]);
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-4 p-3 pb-8 sm:p-4 md:p-6">
-      <Header />
+    <main className="mx-auto w-full max-w-7xl space-y-4 p-3 pb-28 md:space-y-5 md:p-6 md:pb-8">
+      <Header
+        title="Histórico"
+        description="Evolução de calorias, peso e bem-estar ao longo das últimas semanas."
+        showDate={false}
+        profileName={profile.name}
+      />
 
       {errorMessage ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -370,7 +453,93 @@ export default function HistoricoPage() {
         </section>
       ) : null}
 
-      <section className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+      <section className="grid gap-4 xl:grid-cols-3">
+        <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle className="inline-flex items-center gap-2 text-lg font-bold text-textoPrim dark:text-foreground">
+              <Target className="h-5 w-5 text-botao" />
+              Meu plano atual
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Objetivo</p>
+              <p className="mt-1 text-lg font-bold text-textoPrim dark:text-foreground">{goalTypeLabels[profile.goalType]}</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Peso atual</p>
+                <p className="mt-1 text-base font-bold text-textoPrim dark:text-foreground">
+                  {latestWeight ? `${latestWeight.weight.toFixed(1)} kg` : "sem registro"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Peso alvo</p>
+                <p className="mt-1 text-base font-bold text-textoPrim dark:text-foreground">
+                  {profile.targetWeight ? `${profile.targetWeight.toFixed(1)} kg` : "não definido"}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-textoSec dark:text-muted-foreground">
+              {targetDelta === null
+                ? "Defina um peso alvo em Config para acompanhar a distância até o objetivo."
+                : `Diferença atual para o alvo: ${targetDelta > 0 ? "+" : ""}${targetDelta.toFixed(1)} kg.`}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle className="inline-flex items-center gap-2 text-lg font-bold text-textoPrim dark:text-foreground">
+              <TrendingUp className="h-5 w-5 text-botao" />
+              Aderência recente
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Últimos 14 dias ativos</p>
+              <p className="mt-1 text-2xl font-black text-textoPrim dark:text-foreground">{adherence14 ?? 0}%</p>
+            </div>
+            <p className="text-sm text-textoSec dark:text-muted-foreground">
+              Considera como aderente o dia que ficou até 10% acima ou abaixo da meta definida.
+            </p>
+            {firstWeight && latestWeight ? (
+              <p className="text-sm font-medium text-textoPrim dark:text-foreground">
+                Desde {shortDate(fromDateKey(firstWeight.dateKey))}: {latestWeight.weight.toFixed(1)} kg agora.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle className="inline-flex items-center gap-2 text-lg font-bold text-textoPrim dark:text-foreground">
+              <HeartPulse className="h-5 w-5 text-botao" />
+              Bem-estar 14 dias
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Humor</p>
+              <p className="mt-1 text-base font-bold text-textoPrim dark:text-foreground">{wellnessAverages ? wellnessAverages.mood.toFixed(1) : "--"}/5</p>
+            </div>
+            <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Energia</p>
+              <p className="mt-1 text-base font-bold text-textoPrim dark:text-foreground">{wellnessAverages ? wellnessAverages.energy.toFixed(1) : "--"}/5</p>
+            </div>
+            <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Sono</p>
+              <p className="mt-1 text-base font-bold text-textoPrim dark:text-foreground">{wellnessAverages ? `${wellnessAverages.sleep.toFixed(1)}h` : "--"}</p>
+            </div>
+            <div className="rounded-2xl bg-rosaClaro/55 p-3 dark:bg-secondary/65">
+              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Água</p>
+              <p className="mt-1 text-base font-bold text-textoPrim dark:text-foreground">{wellnessAverages ? `${wellnessAverages.water.toFixed(1)} copos` : "--"}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
         <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle className="inline-flex items-center gap-2 text-lg font-bold text-textoPrim dark:text-foreground">
@@ -384,7 +553,7 @@ export default function HistoricoPage() {
               <svg viewBox={`0 0 ${chartMeta.width} ${chartMeta.height}`} className="h-52 w-full">
                 <defs>
                   <linearGradient id="consumed-area" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#e64b8d" stopOpacity="0.35" />
+                    <stop offset="0%" stopColor="#e64b8d" stopOpacity="0.4" />
                     <stop offset="100%" stopColor="#e64b8d" stopOpacity="0.02" />
                   </linearGradient>
                 </defs>
@@ -406,7 +575,7 @@ export default function HistoricoPage() {
 
                 <path d={chartMeta.areaPath} fill="url(#consumed-area)" />
                 <polyline points={chartMeta.metaPoints} fill="none" stroke="#8f6a7d" strokeWidth="2" strokeDasharray="6 6" />
-                <polyline points={chartMeta.consumedPoints} fill="none" stroke="#e64b8d" strokeWidth="3" strokeLinecap="round" />
+                <polyline points={chartMeta.consumedPoints} fill="none" stroke="#e64b8d" strokeWidth="3.5" strokeLinecap="round" />
 
                 <text x={chartMeta.pad} y={chartMeta.height - 6} fontSize="11" fill="currentColor" opacity="0.65">
                   {days30[0]?.label}
@@ -444,7 +613,7 @@ export default function HistoricoPage() {
               <span className="font-medium text-textoSec dark:text-muted-foreground">Escala máx.: {toKcal(chartMeta.maxValue)} kcal</span>
             </div>
 
-            <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-xl border border-borda/70 bg-white/70 p-2 dark:border-border dark:bg-card">
+            <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-xl border border-borda/70 bg-white/70 p-2 dark:border-border dark:bg-card">
               {days30
                 .slice()
                 .reverse()
@@ -483,37 +652,25 @@ export default function HistoricoPage() {
                   className="h-10 rounded-xl border-borda dark:border-border dark:bg-card dark:text-foreground"
                   placeholder="Meta semanal em kcal"
                 />
-                <Button
-                  onClick={saveWeeklyGoal}
-                  className="h-10 rounded-xl bg-botao px-3 text-white hover:bg-botao/90"
-                >
+                <Button onClick={saveWeeklyGoal} className="h-10 rounded-xl bg-botao px-3 text-white hover:bg-botao/90">
                   <Save className="mr-1.5 h-4 w-4" />
                   Salvar
                 </Button>
               </div>
 
               <div className="rounded-2xl bg-rosaClaro/65 p-3 dark:bg-secondary/70">
-                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">
-                  Semana atual
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Semana atual</p>
                 <p className="mt-1 text-lg font-bold text-textoPrim dark:text-foreground">
                   {toKcal(currentWeek?.consumido ?? 0)} / {toKcal(currentWeek?.meta ?? 0)} kcal
                 </p>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/75 dark:bg-muted">
-                  <div
-                    className="h-full rounded-full bg-botao"
-                    style={{ width: `${weekProgress}%` }}
-                  />
+                  <div className="h-full rounded-full bg-botao" style={{ width: `${weekProgress}%` }} />
                 </div>
-                <p className="mt-2 text-xs text-textoSec dark:text-muted-foreground">
-                  {Math.round(weekProgress)}% da meta semanal
-                </p>
+                <p className="mt-2 text-xs text-textoSec dark:text-muted-foreground">{Math.round(weekProgress)}% da meta semanal</p>
               </div>
 
               <div className="rounded-2xl border border-borda/70 bg-white/75 p-3 dark:border-border dark:bg-card">
-                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">
-                  Comparação com semana passada
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Comparação com semana passada</p>
                 {weeklyDiff === null ? (
                   <p className="mt-1 text-sm text-textoSec dark:text-muted-foreground">Ainda sem dados suficientes.</p>
                 ) : (
@@ -557,7 +714,7 @@ export default function HistoricoPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+      <section className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
         <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle className="inline-flex items-center gap-2 text-lg font-bold text-textoPrim dark:text-foreground">
@@ -583,31 +740,40 @@ export default function HistoricoPage() {
                 className="h-10 rounded-xl border-borda dark:border-border dark:bg-card dark:text-foreground"
                 placeholder="Peso (kg)"
               />
-              <Button
-                onClick={registerWeight}
-                className="h-10 rounded-xl bg-botao px-3 text-white hover:bg-botao/90"
-              >
+              <Button onClick={registerWeight} className="h-10 rounded-xl bg-botao px-3 text-white hover:bg-botao/90">
                 Salvar
               </Button>
             </div>
 
-            <div className="rounded-2xl border border-borda/70 bg-white/70 p-3 dark:border-border dark:bg-card">
-              <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Situação atual</p>
-              {latestWeight ? (
-                <div className="mt-1 space-y-1">
-                  <p className="text-lg font-bold text-textoPrim dark:text-foreground">{latestWeight.weight.toFixed(1)} kg</p>
-                  {weightTrend ? (
-                    <p className={`inline-flex items-center gap-1 text-sm font-semibold ${weightTrend.tone}`}>
-                      <TrendingUp className="h-4 w-4" />
-                      {weightTrend.status} ({weightTrend.diff > 0 ? "+" : ""}{weightTrend.diff.toFixed(1)} kg)
-                    </p>
-                  ) : (
-                    <p className="text-sm text-textoSec dark:text-muted-foreground">Adicione mais uma pesagem para ver tendência.</p>
-                  )}
-                </div>
-              ) : (
-                <p className="mt-1 text-sm text-textoSec dark:text-muted-foreground">Nenhuma pesagem registrada ainda.</p>
-              )}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-borda/70 bg-white/70 p-3 dark:border-border dark:bg-card">
+                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Situação atual</p>
+                {latestWeight ? (
+                  <div className="mt-1 space-y-1">
+                    <p className="text-lg font-bold text-textoPrim dark:text-foreground">{latestWeight.weight.toFixed(1)} kg</p>
+                    {weightTrend ? (
+                      <p className={`inline-flex items-center gap-1 text-sm font-semibold ${weightTrend.tone}`}>
+                        <TrendingUp className="h-4 w-4" />
+                        {weightTrend.status} ({weightTrend.diff > 0 ? "+" : ""}{weightTrend.diff.toFixed(1)} kg)
+                      </p>
+                    ) : (
+                      <p className="text-sm text-textoSec dark:text-muted-foreground">Adicione mais uma pesagem para ver tendência.</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-textoSec dark:text-muted-foreground">Nenhuma pesagem registrada ainda.</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-borda/70 bg-white/70 p-3 dark:border-border dark:bg-card">
+                <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Meta do plano</p>
+                <p className="mt-1 text-lg font-bold text-textoPrim dark:text-foreground">
+                  {profile.targetWeight ? `${profile.targetWeight.toFixed(1)} kg` : "Defina em Config"}
+                </p>
+                <p className="mt-1 text-sm text-textoSec dark:text-muted-foreground">
+                  {profile.weeklyPace ? `Ritmo sugerido: ${profile.weeklyPace.toFixed(2)} kg/semana.` : "Sem ritmo definido."}
+                </p>
+              </div>
             </div>
 
             {weightChart ? (
@@ -644,26 +810,44 @@ export default function HistoricoPage() {
 
         <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Pesagens registradas</CardTitle>
+            <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Check-ins recentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="max-h-72 space-y-2 overflow-y-auto">
-              {sortedWeights
+            <div className="max-h-80 space-y-2 overflow-y-auto">
+              {checkIns
                 .slice()
                 .reverse()
+                .slice(0, 10)
                 .map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between rounded-xl border border-borda/70 bg-white/70 px-3 py-2 text-sm dark:border-border dark:bg-card"
+                    className="rounded-xl border border-borda/70 bg-white/70 px-3 py-3 text-sm dark:border-border dark:bg-card"
                   >
-                    <span className="font-medium text-textoPrim dark:text-foreground">{shortDate(fromDateKey(entry.dateKey))}</span>
-                    <span className="font-semibold text-botao">{entry.weight.toFixed(1)} kg</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-textoPrim dark:text-foreground">{shortDate(fromDateKey(entry.dateKey))}</span>
+                      <span className="text-xs text-textoSec dark:text-muted-foreground">humor {entry.mood}/5</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rosaClaro px-2 py-1 text-textoSec dark:bg-secondary dark:text-muted-foreground">
+                        <HeartPulse className="h-3.5 w-3.5" />
+                        energia {entry.energy}/5
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rosaClaro px-2 py-1 text-textoSec dark:bg-secondary dark:text-muted-foreground">
+                        <MoonStar className="h-3.5 w-3.5" />
+                        sono {entry.sleepHours.toFixed(1)}h
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rosaClaro px-2 py-1 text-textoSec dark:bg-secondary dark:text-muted-foreground">
+                        <Waves className="h-3.5 w-3.5" />
+                        água {entry.waterGlasses}
+                      </span>
+                    </div>
+                    {entry.note ? <p className="mt-2 text-sm text-textoSec dark:text-muted-foreground">{entry.note}</p> : null}
                   </div>
                 ))}
 
-              {sortedWeights.length === 0 ? (
+              {checkIns.length === 0 ? (
                 <p className="rounded-xl bg-rosaClaro/50 px-3 py-3 text-sm text-textoSec dark:bg-secondary/70 dark:text-muted-foreground">
-                  Sem pesagens ainda. Adicione sua primeira medição semanal.
+                  Sem check-ins ainda. Preencha o bloco diário na home para começar a acompanhar bem-estar.
                 </p>
               ) : null}
             </div>

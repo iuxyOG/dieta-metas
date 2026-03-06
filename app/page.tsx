@@ -1,22 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Flame, Plus, Sparkles, Target } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
 
 import { BaseDietCard } from "@/components/BaseDietCard";
+import { DailyCheckInCard } from "@/components/DailyCheckInCard";
 import { DailyInsightsCard } from "@/components/DailyInsightsCard";
 import { FoodModal } from "@/components/FoodModal";
 import { Header } from "@/components/Header";
 import { MacrosBar } from "@/components/MacrosBar";
 import { MealCard } from "@/components/MealCard";
+import { MealRhythmCard } from "@/components/MealRhythmCard";
 import { MealTemplatesCard } from "@/components/MealTemplatesCard";
+import { PersonalPlanCard } from "@/components/PersonalPlanCard";
 import { ProgressRing } from "@/components/ProgressRing";
+import { ShoppingListCard, type ShoppingListItem } from "@/components/ShoppingListCard";
+import { SmartInsightsCard } from "@/components/SmartInsightsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  buildDefaultDailyCheckIn,
   buildInitialFoods,
+  buildRecommendedMacroTargets,
   buildStarterDay,
   DEFAULT_META_KCAL,
+  DEFAULT_PROFILE,
+  getFoodCategoryLabel,
+  getGoalTypeDescription,
+  getMealTargetKcal,
+  goalTypeLabels,
+  type MacroTargets,
+  type DailyCheckInRecord,
   type MealTemplateRecord,
   type DietBaseOption,
   mealLabels,
@@ -25,11 +39,18 @@ import {
   type DailyState,
   type FoodRecord,
   type LoggedFood,
+  type PersonalProfile,
   type Refeicao,
+  type WeeklyMealPlan,
   type WeekdayIndex,
   type WeekdayGoalsMap,
 } from "@/lib/data";
-import { fetchTrackerSnapshot, patchTracker, type LogsMap } from "@/lib/tracker-api";
+import {
+  fetchTrackerSnapshot,
+  patchTracker,
+  type LogsMap,
+  type WeightEntryRecord,
+} from "@/lib/tracker-api";
 
 const RECENT_STORAGE_KEY = "calorias.recent.v1";
 const MIDNIGHT_BUFFER_MS = 1500;
@@ -58,15 +79,147 @@ function parseRecentIds(): string[] {
   }
 }
 
+function buildHeaderDescription(profile: PersonalProfile, latestWeight: WeightEntryRecord | null) {
+  const goal = goalTypeLabels[profile.goalType].toLowerCase();
+  const pieces = [`Plano de ${goal}.`];
+
+  if (latestWeight) {
+    pieces.push(`Peso atual em ${latestWeight.weight.toFixed(1)} kg.`);
+  }
+
+  if (profile.targetWeight) {
+    pieces.push(`Alvo em ${profile.targetWeight.toFixed(1)} kg.`);
+  }
+
+  if (profile.weeklyPace) {
+    pieces.push(`Ritmo pensado: ${profile.weeklyPace.toFixed(2)} kg/semana.`);
+  } else {
+    pieces.push(getGoalTypeDescription(profile.goalType));
+  }
+
+  return pieces.join(" ");
+}
+
+function buildPlannedDay(
+  dateKey: string,
+  meta: number,
+  weekdayIndex: WeekdayIndex,
+  weeklyMealPlan: WeeklyMealPlan,
+  mealTemplates: MealTemplateRecord[],
+) {
+  const dayPlan = weeklyMealPlan[weekdayIndex];
+  if (!dayPlan) {
+    return buildStarterDay(dateKey, meta);
+  }
+
+  const templatesMap = new Map(mealTemplates.map((template) => [template.id, template]));
+  const items: LoggedFood[] = [];
+
+  for (const meal of mealOrder) {
+    const templateId = dayPlan[meal];
+    if (!templateId) {
+      continue;
+    }
+
+    const template = templatesMap.get(templateId);
+    if (!template) {
+      continue;
+    }
+
+    for (const item of template.items) {
+      items.push({
+        id: crypto.randomUUID(),
+        foodId: item.foodId,
+        name: item.name,
+        porcao: item.porcao,
+        kcalPorcao: item.kcalPorcao,
+        proteina: item.proteina,
+        carboidrato: item.carboidrato,
+        gordura: item.gordura,
+        quantidade: item.quantidade,
+        refeicao: meal,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  return {
+    dateKey,
+    meta,
+    items,
+  };
+}
+
+function buildShoppingList(
+  weeklyMealPlan: WeeklyMealPlan,
+  mealTemplates: MealTemplateRecord[],
+  foods: FoodRecord[],
+): ShoppingListItem[] {
+  const templatesMap = new Map(mealTemplates.map((template) => [template.id, template]));
+  const foodsMap = new Map(foods.map((food) => [food.id, food]));
+  const itemsMap = new Map<string, ShoppingListItem>();
+
+  for (const weekday of Object.keys(weeklyMealPlan)) {
+    const dayPlan = weeklyMealPlan[Number(weekday) as WeekdayIndex];
+    if (!dayPlan) {
+      continue;
+    }
+
+    for (const meal of mealOrder) {
+      const templateId = dayPlan[meal];
+      if (!templateId) {
+        continue;
+      }
+
+      const template = templatesMap.get(templateId);
+      if (!template) {
+        continue;
+      }
+
+      for (const item of template.items) {
+        const key = item.foodId || `${item.name}-${item.porcao}`;
+        const existing = itemsMap.get(key);
+        const category = foodsMap.get(item.foodId)?.category;
+
+        itemsMap.set(key, {
+          id: key,
+          name: item.name,
+          categoryLabel: category ? getFoodCategoryLabel(category) : null,
+          porcao: item.porcao,
+          quantidade: Number(((existing?.quantidade ?? 0) + item.quantidade).toFixed(1)),
+          occurrences: (existing?.occurrences ?? 0) + 1,
+        });
+      }
+    }
+  }
+
+  return Array.from(itemsMap.values()).sort((a, b) => {
+    if (b.occurrences !== a.occurrences) {
+      return b.occurrences - a.occurrences;
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export default function HomePage() {
   const [foods, setFoods] = useState<FoodRecord[]>(buildInitialFoods());
   const [logsMap, setLogsMap] = useState<LogsMap>({});
   const [daily, setDaily] = useState<DailyState | null>(null);
+  const [profile, setProfile] = useState<PersonalProfile>(DEFAULT_PROFILE);
+  const [macroTargets, setMacroTargets] = useState<MacroTargets>(() =>
+    buildRecommendedMacroTargets(DEFAULT_META_KCAL, DEFAULT_PROFILE),
+  );
+  const [weightEntries, setWeightEntries] = useState<WeightEntryRecord[]>([]);
+  const [checkIns, setCheckIns] = useState<DailyCheckInRecord[]>([]);
+  const [todayCheckIn, setTodayCheckIn] = useState<DailyCheckInRecord>(() => buildDefaultDailyCheckIn(toDateKey()));
+  const [checkInSaving, setCheckInSaving] = useState(false);
   const [yesterdayItems, setYesterdayItems] = useState<LoggedFood[]>([]);
   const [recentFoodIds, setRecentFoodIds] = useState<string[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<Refeicao>("BREAKFAST");
   const [mealTemplates, setMealTemplates] = useState<MealTemplateRecord[]>([]);
+  const [weeklyMealPlan, setWeeklyMealPlan] = useState<WeeklyMealPlan>({});
   const [weekdayGoals, setWeekdayGoals] = useState<WeekdayGoalsMap>({});
   const [trackerError, setTrackerError] = useState<string | null>(null);
   const [foodsError, setFoodsError] = useState<string | null>(null);
@@ -78,6 +231,11 @@ export default function HomePage() {
       const fallback = buildStarterDay(toDateKey(referenceDate), daily?.meta ?? DEFAULT_META_KCAL);
       setDaily(fallback);
       setLogsMap({ [fallback.dateKey]: fallback });
+      setProfile(DEFAULT_PROFILE);
+      setMacroTargets(buildRecommendedMacroTargets(fallback.meta, DEFAULT_PROFILE));
+      setWeightEntries([]);
+      setCheckIns([]);
+      setTodayCheckIn(buildDefaultDailyCheckIn(fallback.dateKey));
       setYesterdayItems([]);
       setRecentFoodIds(parseRecentIds());
       setTrackerError(message);
@@ -95,8 +253,15 @@ export default function HomePage() {
     const weekdayIndex = referenceDate.getDay() as WeekdayIndex;
     const weekdayMeta = snapshot.weekdayGoals[weekdayIndex] ?? snapshot.meta;
     const maybeToday = snapshot.logs[todayKey];
-    const todayState = maybeToday ?? buildStarterDay(todayKey, weekdayMeta);
+    const latestWeight = snapshot.weights[snapshot.weights.length - 1]?.weight;
+    const resolvedMacroTargets =
+      snapshot.macroTargets ?? buildRecommendedMacroTargets(snapshot.meta, snapshot.profile, latestWeight);
+    const todayState =
+      maybeToday ??
+      buildPlannedDay(todayKey, weekdayMeta, weekdayIndex, snapshot.weeklyMealPlan, snapshot.mealTemplates);
     const nextLogs = { ...snapshot.logs, [todayKey]: todayState };
+    const todayCheckInEntry =
+      snapshot.checkIns.find((entry) => entry.dateKey === todayKey) ?? buildDefaultDailyCheckIn(todayKey);
 
     let nextError: string | null = null;
 
@@ -109,9 +274,15 @@ export default function HomePage() {
 
     setLogsMap(nextLogs);
     setDaily(todayState);
+    setProfile(snapshot.profile);
+    setMacroTargets(resolvedMacroTargets);
+    setWeightEntries(snapshot.weights);
+    setCheckIns(snapshot.checkIns);
+    setTodayCheckIn(todayCheckInEntry);
     setYesterdayItems(snapshot.logs[yesterdayKey]?.items ?? []);
     setRecentFoodIds(parseRecentIds());
     setMealTemplates(snapshot.mealTemplates);
+    setWeeklyMealPlan(snapshot.weeklyMealPlan);
     setWeekdayGoals(snapshot.weekdayGoals);
     setTrackerError(nextError);
   }, []);
@@ -130,6 +301,7 @@ export default function HomePage() {
     try {
       const snapshot = await fetchTrackerSnapshot();
       setMealTemplates(snapshot.mealTemplates);
+      setWeeklyMealPlan(snapshot.weeklyMealPlan);
     } catch {}
 
     return false;
@@ -419,6 +591,37 @@ export default function HomePage() {
     void persistMealTemplates(nextTemplates, "Nao foi possivel remover o modelo de refeicao.");
   };
 
+  const saveCheckIn = async () => {
+    const payload = {
+      ...todayCheckIn,
+      dateKey: daily?.dateKey ?? todayCheckIn.dateKey,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setCheckInSaving(true);
+    setTodayCheckIn(payload);
+    setCheckIns((prev) =>
+      [...prev.filter((entry) => entry.dateKey !== payload.dateKey), payload].sort((a, b) => a.dateKey.localeCompare(b.dateKey)),
+    );
+
+    const ok = await patchTracker({ checkIn: payload });
+    setCheckInSaving(false);
+
+    if (ok) {
+      setTrackerError(null);
+      return;
+    }
+
+    setTrackerError("Nao foi possivel salvar o check-in do dia no banco.");
+
+    try {
+      const snapshot = await fetchTrackerSnapshot();
+      setCheckIns(snapshot.checkIns);
+      const restored = snapshot.checkIns.find((entry) => entry.dateKey === (daily?.dateKey ?? payload.dateKey));
+      setTodayCheckIn(restored ?? buildDefaultDailyCheckIn(daily?.dateKey ?? payload.dateKey));
+    } catch {}
+  };
+
   const byMeal = useMemo(() => {
     const grouped: Record<Refeicao, LoggedFood[]> = {
       BREAKFAST: [],
@@ -459,41 +662,34 @@ export default function HomePage() {
   const remaining = useMemo(() => Math.max((daily?.meta ?? 0) - consumed, 0), [daily?.meta, consumed]);
   const now = useMemo(() => new Date(clockNow), [clockNow]);
   const weekdayGoalToday = weekdayGoals[now.getDay() as WeekdayIndex] ?? null;
-
-  const summaryCards = useMemo(
-    () => [
-      {
-        label: "Consumidas",
-        value: Math.round(consumed).toLocaleString("pt-BR"),
-        suffix: "kcal",
-        icon: Flame,
-        color: "text-botao",
-        surface:
-          "bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(252,231,241,0.92)_100%)] dark:bg-[linear-gradient(145deg,rgba(45,28,49,0.96)_0%,rgba(58,34,61,0.92)_100%)]",
-        iconSurface: "bg-white/80 dark:bg-black/15",
-      },
-      {
-        label: "Restantes",
-        value: Math.round(remaining).toLocaleString("pt-BR"),
-        suffix: "kcal",
-        icon: Sparkles,
-        color: "text-emerald-600",
-        surface:
-          "bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(236,253,245,0.92)_100%)] dark:bg-[linear-gradient(145deg,rgba(33,45,39,0.96)_0%,rgba(34,58,46,0.92)_100%)]",
-        iconSurface: "bg-white/80 dark:bg-black/15",
-      },
-      {
-        label: "Meta",
-        value: Math.round(daily?.meta ?? DEFAULT_META_KCAL).toLocaleString("pt-BR"),
-        suffix: "kcal",
-        icon: Target,
-        color: "text-textoPrim",
-        surface:
-          "bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(243,232,255,0.92)_100%)] dark:bg-[linear-gradient(145deg,rgba(44,37,60,0.96)_0%,rgba(56,45,74,0.92)_100%)]",
-        iconSurface: "bg-white/80 dark:bg-black/15",
-      },
-    ],
-    [consumed, daily?.meta, remaining],
+  const latestWeight = useMemo(() => weightEntries[weightEntries.length - 1] ?? null, [weightEntries]);
+  const firstWeight = useMemo(() => weightEntries[0] ?? null, [weightEntries]);
+  const mealTotals = useMemo(
+    () =>
+      mealOrder.reduce(
+        (acc, meal) => {
+          acc[meal] = byMeal[meal].reduce((sum, item) => sum + item.kcalPorcao * item.quantidade, 0);
+          return acc;
+        },
+        { BREAKFAST: 0, LUNCH: 0, DINNER: 0, SNACKS: 0 } as Record<Refeicao, number>,
+      ),
+    [byMeal],
+  );
+  const mealTargets = useMemo(
+    () =>
+      mealOrder.reduce(
+        (acc, meal) => {
+          acc[meal] = getMealTargetKcal(daily?.meta ?? DEFAULT_META_KCAL, meal);
+          return acc;
+        },
+        { BREAKFAST: 0, LUNCH: 0, DINNER: 0, SNACKS: 0 } as Record<Refeicao, number>,
+      ),
+    [daily?.meta],
+  );
+  const headerDescription = useMemo(() => buildHeaderDescription(profile, latestWeight), [profile, latestWeight]);
+  const shoppingListItems = useMemo(
+    () => buildShoppingList(weeklyMealPlan, mealTemplates, foods),
+    [foods, mealTemplates, weeklyMealPlan],
   );
 
   if (!daily) {
@@ -501,9 +697,14 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative mx-auto w-full max-w-6xl space-y-3 p-2.5 pb-28 sm:space-y-4 sm:p-4 md:space-y-5 md:p-6">
+    <main className="relative mx-auto w-full max-w-7xl space-y-4 p-3 pb-28 sm:p-4 md:space-y-5 md:p-6 md:pb-8">
       <div className="animate-enter-1">
-        <Header />
+        <Header
+          profileName={profile.name}
+          eyebrow="rotina pessoal"
+          description={headerDescription}
+          primaryAction={{ href: "/config", label: "Meu plano", icon: Settings }}
+        />
       </div>
 
       {trackerError ? (
@@ -518,29 +719,65 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      <section className="grid gap-2.5 sm:grid-cols-3 sm:gap-3">
-        {summaryCards.map((card, index) => {
-          const Icon = card.icon;
-          return (
-            <article
-              key={card.label}
-              className={`animate-enter-${Math.min(index + 2, 4)} rounded-2xl border border-borda/70 px-3 py-2.5 shadow-[0_10px_26px_-18px_rgba(230,75,141,0.85)] dark:border-border dark:shadow-[0_10px_26px_-18px_rgba(0,0,0,0.92)] ${card.surface}`}
-            >
-              <div className="flex items-end justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textoSec dark:text-muted-foreground">{card.label}</p>
-                  <p className="mt-1 flex items-end gap-1.5 text-[2rem] font-black leading-none text-textoPrim dark:text-foreground">
-                    {card.value}
-                    <span className="pb-0.5 text-[11px] font-semibold text-textoSec dark:text-muted-foreground">{card.suffix}</span>
-                  </p>
-                </div>
-                <span className={`mb-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full ${card.iconSurface}`}>
-                  <Icon className={`h-4 w-4 ${card.color}`} />
-                </span>
-              </div>
-            </article>
-          );
-        })}
+      <section className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
+        <div className="animate-enter-2">
+          <PersonalPlanCard
+            profile={profile}
+            consumed={consumed}
+            meta={daily.meta}
+            remaining={remaining}
+            todayCheckIn={todayCheckIn}
+            latestWeight={latestWeight}
+            firstWeight={firstWeight}
+          />
+        </div>
+        <div className="animate-enter-3">
+          <DailyCheckInCard
+            value={todayCheckIn}
+            waterGoal={profile.dailyWaterGoal}
+            saving={checkInSaving}
+            onChange={setTodayCheckIn}
+            onSave={saveCheckIn}
+          />
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.04fr_0.96fr]">
+        <div className="animate-enter-3">
+          <ProgressRing consumido={consumed} meta={daily.meta} />
+        </div>
+        <div className="animate-enter-4">
+          <MealRhythmCard totals={mealTotals} targets={mealTargets} />
+        </div>
+      </section>
+
+      <section className="grid items-start gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="animate-enter-4">
+          <MacrosBar
+            proteina={macroTotals.proteina}
+            carboidrato={macroTotals.carboidrato}
+            gordura={macroTotals.gordura}
+            targets={macroTargets}
+          />
+        </div>
+        <div className="animate-enter-4">
+          <DailyInsightsCard daily={daily} logsMap={logsMap} consumed={consumed} remaining={remaining} now={now} />
+        </div>
+      </section>
+
+      <section className="grid items-start gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="animate-enter-4">
+          <ShoppingListCard items={shoppingListItems} description="Baseada no planner semanal e nos modelos já salvos." />
+        </div>
+        <div className="animate-enter-4">
+          <SmartInsightsCard
+            checkIns={checkIns}
+            logsMap={logsMap}
+            waterGoal={profile.dailyWaterGoal}
+            macroTargets={macroTargets}
+            proteinConsumedToday={macroTotals.proteina}
+          />
+        </div>
       </section>
 
       <section className="animate-enter-3 rounded-2xl border border-white/60 bg-white/65 px-4 py-3 text-sm shadow-[0_10px_24px_-20px_rgba(230,75,141,0.7)] backdrop-blur dark:border-white/10 dark:bg-black/10">
@@ -552,23 +789,6 @@ export default function HomePage() {
         <p className="mt-1 text-textoSec dark:text-muted-foreground">
           As metas por dia da semana podem ser ajustadas em Config e passam a valer automaticamente quando um novo dia abre.
         </p>
-      </section>
-
-      <section className="grid items-start gap-4 lg:grid-cols-[1.08fr_0.92fr]">
-        <div className="animate-enter-3">
-          <ProgressRing consumido={consumed} meta={daily.meta} />
-        </div>
-        <div className="animate-enter-4">
-          <MacrosBar
-            proteina={macroTotals.proteina}
-            carboidrato={macroTotals.carboidrato}
-            gordura={macroTotals.gordura}
-          />
-        </div>
-      </section>
-
-      <section className="animate-enter-4">
-        <DailyInsightsCard daily={daily} logsMap={logsMap} consumed={consumed} remaining={remaining} now={now} />
       </section>
 
       <section className="animate-enter-4">
@@ -586,8 +806,10 @@ export default function HomePage() {
       <section className="animate-enter-4">
         <Card className="rounded-[26px] border-borda/80 bg-white/85 shadow-[0_10px_32px_-20px_rgba(230,75,141,0.75)] dark:border-border dark:bg-card/90 dark:shadow-[0_10px_32px_-20px_rgba(0,0,0,0.9)]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Refeições</CardTitle>
-            <p className="text-sm text-textoSec dark:text-muted-foreground">Toque em + para adicionar rapidamente</p>
+            <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Refeições do dia</CardTitle>
+            <p className="text-sm text-textoSec dark:text-muted-foreground">
+              Monte o dia por bloco e salve as combinações que mais se repetem.
+            </p>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             {mealOrder.map((meal) => (
@@ -612,7 +834,7 @@ export default function HomePage() {
 
       <Button
         type="button"
-        className="fixed bottom-3 right-3 z-30 h-11 rounded-full bg-botao px-4 text-sm font-semibold text-white shadow-[0_12px_24px_-12px_rgba(230,75,141,0.95)] hover:bg-botao/90 md:bottom-4 md:right-4 md:h-12 md:px-5"
+        className="fixed bottom-[5.4rem] right-3 z-30 h-11 rounded-full bg-botao px-4 text-sm font-semibold text-white shadow-[0_12px_24px_-12px_rgba(230,75,141,0.95)] hover:bg-botao/90 md:bottom-4 md:right-4 md:h-12 md:px-5"
         onClick={() => {
           setSelectedMeal("SNACKS");
           setModalOpen(true);
