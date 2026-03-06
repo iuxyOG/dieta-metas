@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Settings } from "lucide-react";
+import { Flame, HeartPulse, LayoutDashboard, Plus, Settings, Sparkles, type LucideIcon, UtensilsCrossed } from "lucide-react";
 
 import { BaseDietCard } from "@/components/BaseDietCard";
 import { DailyCheckInCard } from "@/components/DailyCheckInCard";
@@ -18,6 +18,7 @@ import { ShoppingListCard, type ShoppingListItem } from "@/components/ShoppingLi
 import { SmartInsightsCard } from "@/components/SmartInsightsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   buildDefaultDailyCheckIn,
   buildInitialFoods,
@@ -102,6 +103,79 @@ function HomeSectionHeading({ eyebrow, title, description }: HomeSectionHeadingP
     </div>
   );
 }
+
+type GoalNoticeCardProps = {
+  weekdayGoalToday: number | null;
+  meta: number;
+};
+
+function GoalNoticeCard({ weekdayGoalToday, meta }: GoalNoticeCardProps) {
+  return (
+    <section className="rounded-[26px] border border-white/60 bg-white/65 px-4 py-4 text-sm shadow-[0_10px_24px_-20px_rgba(230,75,141,0.7)] backdrop-blur dark:border-white/10 dark:bg-black/10">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-botao">meta ativa</p>
+      <p className="mt-2 font-semibold text-textoPrim dark:text-foreground">
+        {weekdayGoalToday
+          ? `Hoje você está usando a meta personalizada de ${Math.round(weekdayGoalToday).toLocaleString("pt-BR")} kcal.`
+          : `Hoje você está usando a meta padrão de ${Math.round(meta).toLocaleString("pt-BR")} kcal.`}
+      </p>
+      <p className="mt-1 text-textoSec dark:text-muted-foreground">
+        As metas por dia da semana podem ser ajustadas em Config e passam a valer automaticamente quando um novo dia abre.
+      </p>
+    </section>
+  );
+}
+
+type MealsOfDaySectionProps = {
+  byMeal: Record<Refeicao, LoggedFood[]>;
+  yesterdayItems: LoggedFood[];
+  onAddMeal: (meal: Refeicao) => void;
+  onRepeatYesterday: (meal: Refeicao) => void;
+  onSaveTemplate: (meal: Refeicao) => void;
+  onRemoveItem: (itemId: string) => void;
+};
+
+function MealsOfDaySection({
+  byMeal,
+  yesterdayItems,
+  onAddMeal,
+  onRepeatYesterday,
+  onSaveTemplate,
+  onRemoveItem,
+}: MealsOfDaySectionProps) {
+  return (
+    <Card className="rounded-[26px] border-borda/80 bg-white/85 shadow-[0_10px_32px_-20px_rgba(230,75,141,0.75)] dark:border-border dark:bg-card/90 dark:shadow-[0_10px_32px_-20px_rgba(0,0,0,0.9)]">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Refeições do dia</CardTitle>
+        <p className="text-sm text-textoSec dark:text-muted-foreground">
+          Monte o dia por bloco e salve as combinações que mais se repetem.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2">
+        {mealOrder.map((meal) => (
+          <MealCard
+            key={meal}
+            refeicao={meal}
+            titulo={mealLabels[meal]}
+            items={byMeal[meal]}
+            hasYesterday={yesterdayItems.some((item) => item.refeicao === meal)}
+            onAdd={onAddMeal}
+            onRepeatYesterday={onRepeatYesterday}
+            onSaveTemplate={onSaveTemplate}
+            onRemoveItem={onRemoveItem}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const mobileHomeTabs: Array<{ value: string; label: string; icon: LucideIcon }> = [
+  { value: "summary", label: "Resumo", icon: LayoutDashboard },
+  { value: "checkin", label: "Check-in", icon: HeartPulse },
+  { value: "calories", label: "Calorias", icon: Flame },
+  { value: "insights", label: "Insights", icon: Sparkles },
+  { value: "meals", label: "Refeições", icon: UtensilsCrossed },
+];
 
 function buildPlannedDay(
   dateKey: string,
@@ -723,25 +797,47 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      <section className="space-y-3">
-        <div className="animate-enter-2">
-          <HomeSectionHeading
-            eyebrow="rotina do dia"
-            title="Seu corpo, seu foco e sua rotina"
-            description="Aqui ficam o plano pessoal e o check-in do dia, sem misturar com as metas de calorias."
-          />
-        </div>
+      <section className="animate-enter-2 md:hidden">
+        <Tabs defaultValue="summary" className="space-y-3">
+          <div className="-mx-1 overflow-x-auto px-1 pb-1">
+            <TabsList className="h-auto w-max min-w-full justify-start gap-1 rounded-[22px] border border-white/60 bg-white/72 p-1.5 backdrop-blur dark:border-white/10 dark:bg-black/10">
+              {mobileHomeTabs.map((tab) => {
+                const Icon = tab.icon;
 
-        <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
-          <div className="animate-enter-2">
+                return (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className="flex min-w-[92px] shrink-0 flex-col gap-1 rounded-2xl px-3 py-2 text-[11px] font-semibold text-textoSec data-[state=active]:bg-white data-[state=active]:text-botao dark:text-muted-foreground dark:data-[state=active]:bg-card"
+                  >
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </div>
+
+          <TabsContent value="summary" className="space-y-3">
+            <HomeSectionHeading
+              eyebrow="resumo do dia"
+              title="Seu plano em uma visão rápida"
+              description="Veja sua rotina pessoal sem carregar a tela inteira de uma vez."
+            />
             <PersonalPlanCard
               profile={profile}
               todayCheckIn={todayCheckIn}
               latestWeight={latestWeight}
               firstWeight={firstWeight}
             />
-          </div>
-          <div className="animate-enter-3">
+          </TabsContent>
+
+          <TabsContent value="checkin" className="space-y-3">
+            <HomeSectionHeading
+              eyebrow="check-in"
+              title="Como seu corpo respondeu hoje"
+              description="Registre humor, energia, fome, água e sono em uma aba própria."
+            />
             <DailyCheckInCard
               value={todayCheckIn}
               waterGoal={profile.dailyWaterGoal}
@@ -749,70 +845,32 @@ export default function HomePage() {
               onChange={setTodayCheckIn}
               onSave={saveCheckIn}
             />
-          </div>
-        </div>
-      </section>
+          </TabsContent>
 
-      <section className="space-y-3">
-        <div className="animate-enter-3">
-          <HomeSectionHeading
-            eyebrow="meta de calorias"
-            title="Calorias, macros e ritmo das refeições"
-            description="Consumo do dia, divisão por refeição e meta atual em um bloco próprio e mais fácil de ler."
-          />
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-[1.04fr_0.96fr]">
-          <div className="animate-enter-3">
+          <TabsContent value="calories" className="space-y-3">
+            <HomeSectionHeading
+              eyebrow="meta de calorias"
+              title="Calorias, macros e ritmo"
+              description="Tudo que é meta do dia fica concentrado aqui."
+            />
             <ProgressRing consumido={consumed} meta={daily.meta} />
-          </div>
-          <div className="space-y-4">
-            <section className="animate-enter-3 rounded-[26px] border border-white/60 bg-white/65 px-4 py-4 text-sm shadow-[0_10px_24px_-20px_rgba(230,75,141,0.7)] backdrop-blur dark:border-white/10 dark:bg-black/10">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-botao">meta ativa</p>
-              <p className="mt-2 font-semibold text-textoPrim dark:text-foreground">
-                {weekdayGoalToday
-                  ? `Hoje você está usando a meta personalizada de ${Math.round(weekdayGoalToday).toLocaleString("pt-BR")} kcal.`
-                  : `Hoje você está usando a meta padrão de ${Math.round(daily.meta).toLocaleString("pt-BR")} kcal.`}
-              </p>
-              <p className="mt-1 text-textoSec dark:text-muted-foreground">
-                As metas por dia da semana podem ser ajustadas em Config e passam a valer automaticamente quando um novo dia abre.
-              </p>
-            </section>
-            <div className="animate-enter-4">
-              <MealRhythmCard totals={mealTotals} targets={mealTargets} />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid items-start gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="animate-enter-4">
+            <GoalNoticeCard weekdayGoalToday={weekdayGoalToday} meta={daily.meta} />
+            <MealRhythmCard totals={mealTotals} targets={mealTargets} />
             <MacrosBar
               proteina={macroTotals.proteina}
               carboidrato={macroTotals.carboidrato}
               gordura={macroTotals.gordura}
               targets={macroTargets}
             />
-          </div>
-          <div className="animate-enter-3">
-            <BaseDietCard onApplyOption={applyDietOption} onSetDefaultMeta={applyDefaultGoal} />
-          </div>
-        </div>
-      </section>
+          </TabsContent>
 
-      <section className="space-y-3">
-        <div className="animate-enter-4">
-          <HomeSectionHeading
-            eyebrow="acompanhamento"
-            title="Leituras do dia e da semana"
-            description="Insights do seu comportamento, sequência de consistência e apoio para manter o plano."
-          />
-        </div>
-
-        <div className="grid items-start gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="animate-enter-4">
+          <TabsContent value="insights" className="space-y-3">
+            <HomeSectionHeading
+              eyebrow="acompanhamento"
+              title="Leituras e padrões da rotina"
+              description="Insights da semana, sequência e lista de compras em uma só aba."
+            />
             <DailyInsightsCard daily={daily} logsMap={logsMap} consumed={consumed} remaining={remaining} now={now} />
-          </div>
-          <div className="animate-enter-4">
             <SmartInsightsCard
               checkIns={checkIns}
               logsMap={logsMap}
@@ -820,60 +878,166 @@ export default function HomePage() {
               macroTargets={macroTargets}
               proteinConsumedToday={macroTotals.proteina}
             />
+            <ShoppingListCard items={shoppingListItems} description="Baseada no planner semanal e nos modelos já salvos." />
+          </TabsContent>
+
+          <TabsContent value="meals" className="space-y-3">
+            <HomeSectionHeading
+              eyebrow="refeições"
+              title="Monte o dia por abas mais leves"
+              description="Modelos salvos, dieta base e refeições do dia agrupados em um só lugar."
+            />
+            <MealTemplatesCard
+              templates={mealTemplates}
+              onApplyTemplate={applyMealTemplate}
+              onDeleteTemplate={removeMealTemplate}
+            />
+            <BaseDietCard onApplyOption={applyDietOption} onSetDefaultMeta={applyDefaultGoal} />
+            <MealsOfDaySection
+              byMeal={byMeal}
+              yesterdayItems={yesterdayItems}
+              onAddMeal={(meal) => {
+                setSelectedMeal(meal);
+                setModalOpen(true);
+              }}
+              onRepeatYesterday={repeatYesterdayMeal}
+              onSaveTemplate={saveMealAsTemplate}
+              onRemoveItem={removeItemFromMeal}
+            />
+          </TabsContent>
+        </Tabs>
+      </section>
+
+      <div className="hidden space-y-5 md:block">
+        <section className="space-y-3">
+          <div className="animate-enter-2">
+            <HomeSectionHeading
+              eyebrow="rotina do dia"
+              title="Seu corpo, seu foco e sua rotina"
+              description="Aqui ficam o plano pessoal e o check-in do dia, sem misturar com as metas de calorias."
+            />
           </div>
-        </div>
 
-        <div className="animate-enter-4">
-          <ShoppingListCard items={shoppingListItems} description="Baseada no planner semanal e nos modelos já salvos." />
-        </div>
-      </section>
+          <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
+            <div className="animate-enter-2">
+              <PersonalPlanCard
+                profile={profile}
+                todayCheckIn={todayCheckIn}
+                latestWeight={latestWeight}
+                firstWeight={firstWeight}
+              />
+            </div>
+            <div className="animate-enter-3">
+              <DailyCheckInCard
+                value={todayCheckIn}
+                waterGoal={profile.dailyWaterGoal}
+                saving={checkInSaving}
+                onChange={setTodayCheckIn}
+                onSave={saveCheckIn}
+              />
+            </div>
+          </div>
+        </section>
 
-      <section className="space-y-3">
-        <div className="animate-enter-4">
-          <HomeSectionHeading
-            eyebrow="montar o dia"
-            title="Refeições e modelos salvos"
-            description="Guarde combinações que se repetem e monte as refeições do dia em blocos mais organizados."
-          />
-        </div>
+        <section className="space-y-3">
+          <div className="animate-enter-3">
+            <HomeSectionHeading
+              eyebrow="meta de calorias"
+              title="Calorias, macros e ritmo das refeições"
+              description="Consumo do dia, divisão por refeição e meta atual em um bloco próprio e mais fácil de ler."
+            />
+          </div>
 
-        <div className="animate-enter-4">
-          <MealTemplatesCard
-            templates={mealTemplates}
-            onApplyTemplate={applyMealTemplate}
-            onDeleteTemplate={removeMealTemplate}
-          />
-        </div>
+          <div className="grid gap-4 xl:grid-cols-[1.04fr_0.96fr]">
+            <div className="animate-enter-3">
+              <ProgressRing consumido={consumed} meta={daily.meta} />
+            </div>
+            <div className="space-y-4">
+              <div className="animate-enter-3">
+                <GoalNoticeCard weekdayGoalToday={weekdayGoalToday} meta={daily.meta} />
+              </div>
+              <div className="animate-enter-4">
+                <MealRhythmCard totals={mealTotals} targets={mealTargets} />
+              </div>
+            </div>
+          </div>
 
-        <div className="animate-enter-4">
-          <Card className="rounded-[26px] border-borda/80 bg-white/85 shadow-[0_10px_32px_-20px_rgba(230,75,141,0.75)] dark:border-border dark:bg-card/90 dark:shadow-[0_10px_32px_-20px_rgba(0,0,0,0.9)]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-bold text-textoPrim dark:text-foreground">Refeições do dia</CardTitle>
-              <p className="text-sm text-textoSec dark:text-muted-foreground">
-                Monte o dia por bloco e salve as combinações que mais se repetem.
-              </p>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              {mealOrder.map((meal) => (
-                <MealCard
-                  key={meal}
-                  refeicao={meal}
-                  titulo={mealLabels[meal]}
-                  items={byMeal[meal]}
-                  hasYesterday={yesterdayItems.some((item) => item.refeicao === meal)}
-                  onAdd={(mealType) => {
-                    setSelectedMeal(mealType);
-                    setModalOpen(true);
-                  }}
-                  onRepeatYesterday={repeatYesterdayMeal}
-                  onSaveTemplate={saveMealAsTemplate}
-                  onRemoveItem={removeItemFromMeal}
-                />
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+          <div className="grid items-start gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="animate-enter-4">
+              <MacrosBar
+                proteina={macroTotals.proteina}
+                carboidrato={macroTotals.carboidrato}
+                gordura={macroTotals.gordura}
+                targets={macroTargets}
+              />
+            </div>
+            <div className="animate-enter-3">
+              <BaseDietCard onApplyOption={applyDietOption} onSetDefaultMeta={applyDefaultGoal} />
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="animate-enter-4">
+            <HomeSectionHeading
+              eyebrow="acompanhamento"
+              title="Leituras do dia e da semana"
+              description="Insights do seu comportamento, sequência de consistência e apoio para manter o plano."
+            />
+          </div>
+
+          <div className="grid items-start gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="animate-enter-4">
+              <DailyInsightsCard daily={daily} logsMap={logsMap} consumed={consumed} remaining={remaining} now={now} />
+            </div>
+            <div className="animate-enter-4">
+              <SmartInsightsCard
+                checkIns={checkIns}
+                logsMap={logsMap}
+                waterGoal={profile.dailyWaterGoal}
+                macroTargets={macroTargets}
+                proteinConsumedToday={macroTotals.proteina}
+              />
+            </div>
+          </div>
+
+          <div className="animate-enter-4">
+            <ShoppingListCard items={shoppingListItems} description="Baseada no planner semanal e nos modelos já salvos." />
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="animate-enter-4">
+            <HomeSectionHeading
+              eyebrow="montar o dia"
+              title="Refeições e modelos salvos"
+              description="Guarde combinações que se repetem e monte as refeições do dia em blocos mais organizados."
+            />
+          </div>
+
+          <div className="animate-enter-4">
+            <MealTemplatesCard
+              templates={mealTemplates}
+              onApplyTemplate={applyMealTemplate}
+              onDeleteTemplate={removeMealTemplate}
+            />
+          </div>
+
+          <div className="animate-enter-4">
+            <MealsOfDaySection
+              byMeal={byMeal}
+              yesterdayItems={yesterdayItems}
+              onAddMeal={(meal) => {
+                setSelectedMeal(meal);
+                setModalOpen(true);
+              }}
+              onRepeatYesterday={repeatYesterdayMeal}
+              onSaveTemplate={saveMealAsTemplate}
+              onRemoveItem={removeItemFromMeal}
+            />
+          </div>
+        </section>
+      </div>
 
       <Button
         type="button"
