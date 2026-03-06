@@ -44,6 +44,30 @@ export type DailyState = {
   items: LoggedFood[];
 };
 
+export const weekdayOrder = [1, 2, 3, 4, 5, 6, 0] as const;
+export type WeekdayIndex = (typeof weekdayOrder)[number];
+export type WeekdayGoalsMap = Partial<Record<WeekdayIndex, number>>;
+
+export type MealTemplateItem = {
+  foodId: string;
+  name: string;
+  porcao: string;
+  kcalPorcao: number;
+  proteina: number;
+  carboidrato: number;
+  gordura: number;
+  quantidade: number;
+};
+
+export type MealTemplateRecord = {
+  id: string;
+  name: string;
+  refeicao: Refeicao;
+  items: MealTemplateItem[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const DEFAULT_META_KCAL = 2500;
 
 export type DietBaseOption = {
@@ -314,6 +338,10 @@ export const dietaBase2500: { meta: number; groups: DietBaseGroup[] } = {
 
 const monthMap = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const weekMap = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+export function getWeekdayLabel(weekday: WeekdayIndex): string {
+  return weekMap[weekday];
+}
 
 export function getPtDateLabel(date = new Date()): string {
   const weekday = weekMap[date.getDay()];

@@ -1,4 +1,4 @@
-import { DEFAULT_META_KCAL, type DailyState } from "@/lib/data";
+import { DEFAULT_META_KCAL, type DailyState, type MealTemplateRecord, type WeekdayGoalsMap } from "@/lib/data";
 
 export type WeeklyGoalsMap = Record<string, number>;
 
@@ -14,12 +14,15 @@ export type TrackerSnapshot = {
   meta: number;
   logs: LogsMap;
   weeklyGoals: WeeklyGoalsMap;
+  weekdayGoals: WeekdayGoalsMap;
   weights: WeightEntryRecord[];
+  mealTemplates: MealTemplateRecord[];
 };
 
 export type TrackerPatchPayload = {
   meta?: number;
   daily?: DailyState;
+  weekdayGoals?: WeekdayGoalsMap;
   weeklyGoal?: {
     weekKey: string;
     kcal: number;
@@ -28,6 +31,7 @@ export type TrackerPatchPayload = {
     dateKey: string;
     weight: number;
   };
+  mealTemplates?: MealTemplateRecord[];
 };
 
 export async function fetchTrackerSnapshot(): Promise<TrackerSnapshot> {
@@ -51,7 +55,9 @@ export async function fetchTrackerSnapshot(): Promise<TrackerSnapshot> {
     meta: Number.isFinite(meta) && meta > 0 ? Math.round(meta) : DEFAULT_META_KCAL,
     logs: payload.logs && typeof payload.logs === "object" ? payload.logs : {},
     weeklyGoals: payload.weeklyGoals && typeof payload.weeklyGoals === "object" ? payload.weeklyGoals : {},
+    weekdayGoals: payload.weekdayGoals && typeof payload.weekdayGoals === "object" ? payload.weekdayGoals : {},
     weights: Array.isArray(payload.weights) ? payload.weights : [],
+    mealTemplates: Array.isArray(payload.mealTemplates) ? payload.mealTemplates : [],
   };
 }
 

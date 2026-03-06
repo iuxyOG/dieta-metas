@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Flame, Plus, Sparkles, Target } from "lucide-react";
 
 import { BaseDietCard } from "@/components/BaseDietCard";
+import { DailyInsightsCard } from "@/components/DailyInsightsCard";
 import { FoodModal } from "@/components/FoodModal";
 import { Header } from "@/components/Header";
 import { MacrosBar } from "@/components/MacrosBar";
 import { MealCard } from "@/components/MealCard";
+import { MealTemplatesCard } from "@/components/MealTemplatesCard";
 import { ProgressRing } from "@/components/ProgressRing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +17,7 @@ import {
   buildInitialFoods,
   buildStarterDay,
   DEFAULT_META_KCAL,
+  type MealTemplateRecord,
   type DietBaseOption,
   mealLabels,
   mealOrder,
@@ -23,10 +26,19 @@ import {
   type FoodRecord,
   type LoggedFood,
   type Refeicao,
+  type WeekdayIndex,
+  type WeekdayGoalsMap,
 } from "@/lib/data";
 import { fetchTrackerSnapshot, patchTracker, type LogsMap } from "@/lib/tracker-api";
 
 const RECENT_STORAGE_KEY = "calorias.recent.v1";
+const MIDNIGHT_BUFFER_MS = 1500;
+
+function getMillisecondsUntilNextDay(date = new Date()) {
+  const nextMidnight = new Date(date);
+  nextMidnight.setHours(24, 0, 0, 0);
+  return Math.max(1000, nextMidnight.getTime() - date.getTime() + MIDNIGHT_BUFFER_MS);
+}
 
 function parseRecentIds(): string[] {
   if (typeof window === "undefined") {
@@ -54,52 +66,84 @@ export default function HomePage() {
   const [recentFoodIds, setRecentFoodIds] = useState<string[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<Refeicao>("BREAKFAST");
+  const [mealTemplates, setMealTemplates] = useState<MealTemplateRecord[]>([]);
+  const [weekdayGoals, setWeekdayGoals] = useState<WeekdayGoalsMap>({});
   const [trackerError, setTrackerError] = useState<string | null>(null);
+  const [foodsError, setFoodsError] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const currentDateKey = daily?.dateKey ?? null;
 
-  useEffect(() => {
-    let active = true;
-
-    const loadTracker = async () => {
-      const todayKey = toDateKey();
-      const yesterdayDate = new Date();
-      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-      const yesterdayKey = toDateKey(yesterdayDate);
-
-      const snapshot = await fetchTrackerSnapshot();
-      const maybeToday = snapshot.logs[todayKey];
-      const todayState = maybeToday ?? buildStarterDay(todayKey, snapshot.meta);
-      const nextLogs = { ...snapshot.logs, [todayKey]: todayState };
-
-      if (!maybeToday) {
-        void patchTracker({ daily: todayState }).then((ok) => {
-          if (!ok) {
-            setTrackerError("Nao foi possivel inicializar o dia atual no banco de dados.");
-          }
-        });
-      }
-
-      if (!active) {
-        return;
-      }
-
-      setLogsMap(nextLogs);
-      setDaily(todayState);
-      setYesterdayItems(snapshot.logs[yesterdayKey]?.items ?? []);
-      setRecentFoodIds(parseRecentIds());
-      setTrackerError(null);
-    };
-
-    void loadTracker().catch(() => {
-      if (!active) {
-        return;
-      }
-
-      const fallback = buildStarterDay(toDateKey(), DEFAULT_META_KCAL);
+  const applyFallbackDay = useCallback(
+    (referenceDate: Date, message: string) => {
+      const fallback = buildStarterDay(toDateKey(referenceDate), daily?.meta ?? DEFAULT_META_KCAL);
       setDaily(fallback);
       setLogsMap({ [fallback.dateKey]: fallback });
       setYesterdayItems([]);
       setRecentFoodIds(parseRecentIds());
-      setTrackerError("Os dados do banco não puderam ser carregados agora.");
+      setTrackerError(message);
+    },
+    [daily?.meta],
+  );
+
+  const loadDayState = useCallback(async (referenceDate = new Date()) => {
+    const todayKey = toDateKey(referenceDate);
+    const yesterdayDate = new Date(referenceDate);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayKey = toDateKey(yesterdayDate);
+
+    const snapshot = await fetchTrackerSnapshot();
+    const weekdayIndex = referenceDate.getDay() as WeekdayIndex;
+    const weekdayMeta = snapshot.weekdayGoals[weekdayIndex] ?? snapshot.meta;
+    const maybeToday = snapshot.logs[todayKey];
+    const todayState = maybeToday ?? buildStarterDay(todayKey, weekdayMeta);
+    const nextLogs = { ...snapshot.logs, [todayKey]: todayState };
+
+    let nextError: string | null = null;
+
+    if (!maybeToday) {
+      const ok = await patchTracker({ daily: todayState });
+      if (!ok) {
+        nextError = "Nao foi possivel inicializar o novo dia no banco de dados.";
+      }
+    }
+
+    setLogsMap(nextLogs);
+    setDaily(todayState);
+    setYesterdayItems(snapshot.logs[yesterdayKey]?.items ?? []);
+    setRecentFoodIds(parseRecentIds());
+    setMealTemplates(snapshot.mealTemplates);
+    setWeekdayGoals(snapshot.weekdayGoals);
+    setTrackerError(nextError);
+  }, []);
+
+  const persistMealTemplates = useCallback(async (nextTemplates: MealTemplateRecord[], errorMessage: string) => {
+    setMealTemplates(nextTemplates);
+
+    const ok = await patchTracker({ mealTemplates: nextTemplates });
+    if (ok) {
+      setTrackerError(null);
+      return true;
+    }
+
+    setTrackerError(errorMessage);
+
+    try {
+      const snapshot = await fetchTrackerSnapshot();
+      setMealTemplates(snapshot.mealTemplates);
+    } catch {}
+
+    return false;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadDayState().catch(() => {
+      if (!active) {
+        return;
+      }
+
+      applyFallbackDay(new Date(), "Os dados do banco nao puderam ser carregados agora.");
     });
 
     void fetch("/api/foods")
@@ -125,21 +169,61 @@ export default function HomePage() {
 
         if (parsed.length > 0) {
           setFoods(parsed);
-          setTrackerError(null);
+          setFoodsError(null);
         }
       })
       .catch(() => {
         setFoods(buildInitialFoods());
-        setTrackerError(
-          (current) =>
-            current ?? "A lista exibida esta apenas em modo local temporario. Novos dados nao serao persistidos enquanto o banco nao responder.",
+        setFoodsError(
+          "A lista exibida esta apenas em modo local temporario. Novos dados nao serao persistidos enquanto o banco nao responder.",
         );
       });
 
     return () => {
       active = false;
     };
+  }, [applyFallbackDay, loadDayState]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!currentDateKey) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadDayState(new Date()).catch(() => {
+        applyFallbackDay(new Date(), "A virada automatica falhou ao consultar o banco. O novo dia foi aberto localmente.");
+      });
+    }, getMillisecondsUntilNextDay());
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      if (toDateKey() === currentDateKey) {
+        return;
+      }
+
+      void loadDayState(new Date()).catch(() => {
+        applyFallbackDay(new Date(), "O app abriu um novo dia localmente porque o banco nao respondeu ao voltar para a aba.");
+      });
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [applyFallbackDay, currentDateKey, loadDayState]);
 
   const updateDaily = (updater: (prev: DailyState) => DailyState) => {
     setDaily((prev) => {
@@ -251,6 +335,90 @@ export default function HomePage() {
     }));
   };
 
+  const saveMealAsTemplate = (meal: Refeicao) => {
+    const items = (daily?.items ?? []).filter((item) => item.refeicao === meal);
+    if (items.length === 0) {
+      return;
+    }
+
+    const suggestedName = `${mealLabels[meal]} ${new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+    }).format(new Date())}`;
+    const templateName = window.prompt("Nome do modelo de refeicao:", suggestedName)?.trim();
+    if (!templateName) {
+      return;
+    }
+
+    const existing = mealTemplates.find((template) => template.name.toLowerCase() === templateName.toLowerCase());
+    const timestamp = new Date().toISOString();
+
+    const nextTemplate: MealTemplateRecord = {
+      id: existing?.id ?? crypto.randomUUID(),
+      name: templateName,
+      refeicao: meal,
+      items: items.map((item) => ({
+        foodId: item.foodId,
+        name: item.name,
+        porcao: item.porcao,
+        kcalPorcao: item.kcalPorcao,
+        proteina: item.proteina,
+        carboidrato: item.carboidrato,
+        gordura: item.gordura,
+        quantidade: item.quantidade,
+      })),
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+
+    const nextTemplates = [nextTemplate, ...mealTemplates.filter((template) => template.id !== nextTemplate.id)]
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, 24);
+
+    void persistMealTemplates(nextTemplates, "Nao foi possivel salvar o modelo de refeicao.");
+  };
+
+  const applyMealTemplate = (templateId: string) => {
+    const template = mealTemplates.find((entry) => entry.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    updateDaily((prev) => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        ...template.items.map((item) => ({
+          id: crypto.randomUUID(),
+          foodId: item.foodId,
+          name: item.name,
+          porcao: item.porcao,
+          kcalPorcao: item.kcalPorcao,
+          proteina: item.proteina,
+          carboidrato: item.carboidrato,
+          gordura: item.gordura,
+          quantidade: item.quantidade,
+          refeicao: template.refeicao,
+          createdAt: new Date().toISOString(),
+        })),
+      ],
+    }));
+  };
+
+  const removeMealTemplate = (templateId: string) => {
+    const template = mealTemplates.find((entry) => entry.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    if (!window.confirm(`Remover o modelo "${template.name}"?`)) {
+      return;
+    }
+
+    const nextTemplates = mealTemplates.filter((entry) => entry.id !== templateId);
+    void persistMealTemplates(nextTemplates, "Nao foi possivel remover o modelo de refeicao.");
+  };
+
   const byMeal = useMemo(() => {
     const grouped: Record<Refeicao, LoggedFood[]> = {
       BREAKFAST: [],
@@ -289,6 +457,8 @@ export default function HomePage() {
   }, [foods, recentFoodIds]);
 
   const remaining = useMemo(() => Math.max((daily?.meta ?? 0) - consumed, 0), [daily?.meta, consumed]);
+  const now = useMemo(() => new Date(clockNow), [clockNow]);
+  const weekdayGoalToday = weekdayGoals[now.getDay() as WeekdayIndex] ?? null;
 
   const summaryCards = useMemo(
     () => [
@@ -298,6 +468,9 @@ export default function HomePage() {
         suffix: "kcal",
         icon: Flame,
         color: "text-botao",
+        surface:
+          "bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(252,231,241,0.92)_100%)] dark:bg-[linear-gradient(145deg,rgba(45,28,49,0.96)_0%,rgba(58,34,61,0.92)_100%)]",
+        iconSurface: "bg-white/80 dark:bg-black/15",
       },
       {
         label: "Restantes",
@@ -305,6 +478,9 @@ export default function HomePage() {
         suffix: "kcal",
         icon: Sparkles,
         color: "text-emerald-600",
+        surface:
+          "bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(236,253,245,0.92)_100%)] dark:bg-[linear-gradient(145deg,rgba(33,45,39,0.96)_0%,rgba(34,58,46,0.92)_100%)]",
+        iconSurface: "bg-white/80 dark:bg-black/15",
       },
       {
         label: "Meta",
@@ -312,6 +488,9 @@ export default function HomePage() {
         suffix: "kcal",
         icon: Target,
         color: "text-textoPrim",
+        surface:
+          "bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(243,232,255,0.92)_100%)] dark:bg-[linear-gradient(145deg,rgba(44,37,60,0.96)_0%,rgba(56,45,74,0.92)_100%)]",
+        iconSurface: "bg-white/80 dark:bg-black/15",
       },
     ],
     [consumed, daily?.meta, remaining],
@@ -333,13 +512,19 @@ export default function HomePage() {
         </section>
       ) : null}
 
+      {foodsError ? (
+        <section className="animate-enter-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {foodsError}
+        </section>
+      ) : null}
+
       <section className="grid gap-2.5 sm:grid-cols-3 sm:gap-3">
         {summaryCards.map((card, index) => {
           const Icon = card.icon;
           return (
             <article
               key={card.label}
-              className={`animate-enter-${Math.min(index + 2, 4)} rounded-2xl border border-borda/70 bg-white/80 px-3 py-2.5 shadow-[0_8px_24px_-20px_rgba(230,75,141,0.8)] dark:border-border dark:bg-card/90 dark:shadow-[0_8px_24px_-20px_rgba(0,0,0,0.9)]`}
+              className={`animate-enter-${Math.min(index + 2, 4)} rounded-2xl border border-borda/70 px-3 py-2.5 shadow-[0_10px_26px_-18px_rgba(230,75,141,0.85)] dark:border-border dark:shadow-[0_10px_26px_-18px_rgba(0,0,0,0.92)] ${card.surface}`}
             >
               <div className="flex items-end justify-between gap-2">
                 <div>
@@ -349,7 +534,7 @@ export default function HomePage() {
                     <span className="pb-0.5 text-[11px] font-semibold text-textoSec dark:text-muted-foreground">{card.suffix}</span>
                   </p>
                 </div>
-                <span className="mb-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-rosaClaro/80 dark:bg-secondary">
+                <span className={`mb-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full ${card.iconSurface}`}>
                   <Icon className={`h-4 w-4 ${card.color}`} />
                 </span>
               </div>
@@ -358,8 +543,15 @@ export default function HomePage() {
         })}
       </section>
 
-      <section className="animate-enter-3">
-        <BaseDietCard onApplyOption={applyDietOption} onSetDefaultMeta={applyDefaultGoal} />
+      <section className="animate-enter-3 rounded-2xl border border-white/60 bg-white/65 px-4 py-3 text-sm shadow-[0_10px_24px_-20px_rgba(230,75,141,0.7)] backdrop-blur dark:border-white/10 dark:bg-black/10">
+        <p className="font-semibold text-textoPrim dark:text-foreground">
+          {weekdayGoalToday
+            ? `Hoje esta usando a meta personalizada de ${Math.round(weekdayGoalToday).toLocaleString("pt-BR")} kcal.`
+            : `Hoje esta usando a meta padrao de ${Math.round(daily.meta).toLocaleString("pt-BR")} kcal.`}
+        </p>
+        <p className="mt-1 text-textoSec dark:text-muted-foreground">
+          As metas por dia da semana podem ser ajustadas em Config e passam a valer automaticamente quando um novo dia abre.
+        </p>
       </section>
 
       <section className="grid items-start gap-4 lg:grid-cols-[1.08fr_0.92fr]">
@@ -373,6 +565,22 @@ export default function HomePage() {
             gordura={macroTotals.gordura}
           />
         </div>
+      </section>
+
+      <section className="animate-enter-4">
+        <DailyInsightsCard daily={daily} logsMap={logsMap} consumed={consumed} remaining={remaining} now={now} />
+      </section>
+
+      <section className="animate-enter-4">
+        <MealTemplatesCard
+          templates={mealTemplates}
+          onApplyTemplate={applyMealTemplate}
+          onDeleteTemplate={removeMealTemplate}
+        />
+      </section>
+
+      <section className="animate-enter-3">
+        <BaseDietCard onApplyOption={applyDietOption} onSetDefaultMeta={applyDefaultGoal} />
       </section>
 
       <section className="animate-enter-4">
@@ -394,6 +602,7 @@ export default function HomePage() {
                   setModalOpen(true);
                 }}
                 onRepeatYesterday={repeatYesterdayMeal}
+                onSaveTemplate={saveMealAsTemplate}
                 onRemoveItem={removeItemFromMeal}
               />
             ))}

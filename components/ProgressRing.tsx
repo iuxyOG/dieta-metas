@@ -15,12 +15,17 @@ export function ProgressRing({ consumido, meta }: ProgressRingProps) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (progresso / 100) * circumference;
   const restante = Math.max(meta - consumido, 0);
+  const statusLabel = progresso >= 100 ? "meta batida" : progresso >= 75 ? "reta final" : "hoje";
 
   return (
-    <div className="rounded-[26px] border border-borda/75 bg-white/85 p-5 shadow-[0_8px_28px_-18px_rgba(230,75,141,0.65)] dark:border-border dark:bg-card/90 dark:shadow-[0_8px_28px_-18px_rgba(0,0,0,0.9)]">
+    <div className="relative overflow-hidden rounded-[26px] border border-borda/75 bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(252,231,241,0.88)_58%,rgba(247,203,224,0.78)_100%)] p-5 shadow-[0_12px_28px_-18px_rgba(230,75,141,0.75)] dark:border-border dark:bg-[linear-gradient(145deg,rgba(43,27,46,0.96)_0%,rgba(58,34,61,0.92)_58%,rgba(66,39,61,0.88)_100%)] dark:shadow-[0_12px_28px_-18px_rgba(0,0,0,0.92)]">
+      <div className="pointer-events-none absolute -right-10 top-0 h-28 w-28 rounded-full bg-white/45 blur-2xl dark:bg-white/5" />
+
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-bold text-textoPrim dark:text-foreground">Seu progresso</h2>
-        <span className="rounded-full bg-rosaClaro px-3 py-1 text-xs font-semibold text-botao dark:bg-secondary">hoje</span>
+        <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-botao dark:bg-black/15">
+          {statusLabel}
+        </span>
       </div>
 
       <div className="flex flex-col items-center gap-4 md:flex-row md:items-center md:justify-between">
@@ -65,7 +70,7 @@ export function ProgressRing({ consumido, meta }: ProgressRingProps) {
         </svg>
 
         <div className="w-full space-y-3 md:max-w-[220px]">
-          <div className="rounded-2xl bg-rosaClaro/70 p-3 dark:bg-secondary/70">
+          <div className="rounded-2xl bg-white/72 p-3 dark:bg-black/10">
             <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Meta</p>
             <p className="mt-1 inline-flex items-center gap-1 text-lg font-bold text-textoPrim dark:text-foreground">
               <Target className="h-4 w-4 text-botao" />
@@ -73,7 +78,7 @@ export function ProgressRing({ consumido, meta }: ProgressRingProps) {
             </p>
           </div>
 
-          <div className="rounded-2xl bg-rosaClaro/70 p-3 dark:bg-secondary/70">
+          <div className="rounded-2xl bg-white/72 p-3 dark:bg-black/10">
             <p className="text-xs font-semibold uppercase tracking-wide text-textoSec dark:text-muted-foreground">Consumidas</p>
             <p className="mt-1 inline-flex items-center gap-1 text-lg font-bold text-textoPrim dark:text-foreground">
               <Flame className="h-4 w-4 text-botao" />

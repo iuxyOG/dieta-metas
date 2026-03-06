@@ -1,22 +1,36 @@
 import { NextResponse } from "next/server";
 
-import { DEFAULT_META_KCAL, type DailyState, type LoggedFood, type Refeicao } from "@/lib/data";
+import {
+  DEFAULT_META_KCAL,
+  type DailyState,
+  type LoggedFood,
+  type MealTemplateItem,
+  type MealTemplateRecord,
+  type Refeicao,
+  type WeekdayGoalsMap,
+  type WeekdayIndex,
+} from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 import type { TrackerPatchPayload } from "@/lib/tracker-api";
 
 const META_SETTING_KEY = "daily-meta";
+const WEEKDAY_GOALS_SETTING_KEY = "weekday-goals";
+const MEAL_TEMPLATES_SETTING_KEY = "meal-templates";
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const REFEICOES: Refeicao[] = ["BREAKFAST", "LUNCH", "DINNER", "SNACKS"];
+const VALID_WEEKDAYS = new Set<WeekdayIndex>([0, 1, 2, 3, 4, 5, 6]);
 
 type TrackerSnapshotResponse = {
   meta: number;
   logs: Record<string, DailyState>;
   weeklyGoals: Record<string, number>;
+  weekdayGoals: WeekdayGoalsMap;
   weights: Array<{
     id: string;
     dateKey: string;
     weight: number;
   }>;
+  mealTemplates: MealTemplateRecord[];
 };
 
 function toDateFromDateKey(dateKey: string): Date | null {
@@ -117,18 +131,140 @@ function normalizeDaily(raw: unknown): DailyState | null {
   };
 }
 
+function normalizeWeekday(value: unknown): WeekdayIndex | null {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || !VALID_WEEKDAYS.has(parsed as WeekdayIndex)) {
+    return null;
+  }
+
+  return parsed as WeekdayIndex;
+}
+
+function normalizeWeekdayGoals(raw: unknown): WeekdayGoalsMap | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+
+  const entries = Object.entries(raw as Record<string, unknown>);
+  const nextGoals: WeekdayGoalsMap = {};
+
+  for (const [weekdayKey, kcalRaw] of entries) {
+    const weekday = normalizeWeekday(weekdayKey);
+    const kcal = normalizePositiveInt(kcalRaw);
+    if (weekday === null || !kcal) {
+      return null;
+    }
+
+    nextGoals[weekday] = kcal;
+  }
+
+  return nextGoals;
+}
+
+function normalizeMealTemplateItem(raw: unknown): MealTemplateItem | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const item = raw as Record<string, unknown>;
+  const foodId = String(item.foodId ?? "").trim();
+  const name = String(item.name ?? "").trim();
+  const porcao = String(item.porcao ?? "").trim();
+  const kcalPorcao = normalizePositiveInt(item.kcalPorcao);
+  const quantidade = normalizePositiveFloat(item.quantidade);
+
+  if (!foodId || !name || !porcao || !kcalPorcao || !quantidade) {
+    return null;
+  }
+
+  return {
+    foodId,
+    name,
+    porcao,
+    kcalPorcao,
+    proteina: normalizeMacro(item.proteina),
+    carboidrato: normalizeMacro(item.carboidrato),
+    gordura: normalizeMacro(item.gordura),
+    quantidade,
+  };
+}
+
+function normalizeMealTemplate(raw: unknown): MealTemplateRecord | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const template = raw as Record<string, unknown>;
+  const name = String(template.name ?? "").trim();
+  const refeicao = normalizeRefeicao(template.refeicao);
+  const itemsRaw = Array.isArray(template.items) ? template.items : [];
+  const items = itemsRaw.map(normalizeMealTemplateItem).filter((item): item is MealTemplateItem => Boolean(item));
+
+  if (!name || items.length === 0) {
+    return null;
+  }
+
+  const createdAt =
+    typeof template.createdAt === "string" && !Number.isNaN(new Date(template.createdAt).getTime())
+      ? template.createdAt
+      : new Date().toISOString();
+
+  const updatedAt =
+    typeof template.updatedAt === "string" && !Number.isNaN(new Date(template.updatedAt).getTime())
+      ? template.updatedAt
+      : createdAt;
+
+  return {
+    id: typeof template.id === "string" && template.id.trim() ? template.id : crypto.randomUUID(),
+    name,
+    refeicao,
+    items,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function normalizeMealTemplates(raw: unknown): MealTemplateRecord[] | null {
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+
+  const templates = raw.map(normalizeMealTemplate);
+  if (templates.some((template) => !template)) {
+    return null;
+  }
+
+  return templates.filter((template): template is MealTemplateRecord => Boolean(template));
+}
+
+function parseStoredJson(value: string | null | undefined, fallback: unknown) {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 function sanitizeSnapshot(snapshot: TrackerSnapshotResponse): TrackerSnapshotResponse {
   return {
     meta: snapshot.meta,
     logs: snapshot.logs,
     weeklyGoals: snapshot.weeklyGoals,
+    weekdayGoals: snapshot.weekdayGoals,
     weights: snapshot.weights,
+    mealTemplates: snapshot.mealTemplates,
   };
 }
 
 async function loadSnapshot(): Promise<TrackerSnapshotResponse> {
-  const [setting, dailyLogs, goals, weights] = await Promise.all([
+  const [setting, weekdayGoalSetting, mealTemplatesSetting, dailyLogs, goals, weights] = await Promise.all([
     prisma.appSetting.findUnique({ where: { key: META_SETTING_KEY } }),
+    prisma.appSetting.findUnique({ where: { key: WEEKDAY_GOALS_SETTING_KEY } }),
+    prisma.appSetting.findUnique({ where: { key: MEAL_TEMPLATES_SETTING_KEY } }),
     prisma.dailyLog.findMany({
       orderBy: { date: "asc" },
       include: {
@@ -143,6 +279,8 @@ async function loadSnapshot(): Promise<TrackerSnapshotResponse> {
 
   const parsedMeta = normalizePositiveInt(setting?.value);
   const meta = parsedMeta ?? DEFAULT_META_KCAL;
+  const weekdayGoals = normalizeWeekdayGoals(parseStoredJson(weekdayGoalSetting?.value, {})) ?? {};
+  const mealTemplates = normalizeMealTemplates(parseStoredJson(mealTemplatesSetting?.value, [])) ?? [];
 
   const logs = Object.fromEntries(
     dailyLogs.map((log) => [
@@ -178,7 +316,9 @@ async function loadSnapshot(): Promise<TrackerSnapshotResponse> {
     meta,
     logs,
     weeklyGoals,
+    weekdayGoals,
     weights: mappedWeights,
+    mealTemplates,
   };
 }
 
@@ -199,6 +339,8 @@ export async function PATCH(request: Request) {
 
   const nextMeta = body.meta !== undefined ? normalizePositiveInt(body.meta) : null;
   const nextDaily = body.daily !== undefined ? normalizeDaily(body.daily) : null;
+  const nextWeekdayGoals = body.weekdayGoals !== undefined ? normalizeWeekdayGoals(body.weekdayGoals) : undefined;
+  const nextMealTemplates = body.mealTemplates !== undefined ? normalizeMealTemplates(body.mealTemplates) : undefined;
 
   const weeklyGoalKcal =
     body.weeklyGoal && typeof body.weeklyGoal === "object"
@@ -237,12 +379,20 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Registro diário inválido" }, { status: 400 });
   }
 
+  if (body.weekdayGoals !== undefined && !nextWeekdayGoals) {
+    return NextResponse.json({ error: "Metas por dia inválidas" }, { status: 400 });
+  }
+
   if (body.weeklyGoal !== undefined && !nextWeeklyGoal) {
     return NextResponse.json({ error: "Meta semanal inválida" }, { status: 400 });
   }
 
   if (body.weight !== undefined && !nextWeight) {
     return NextResponse.json({ error: "Peso inválido" }, { status: 400 });
+  }
+
+  if (body.mealTemplates !== undefined && !nextMealTemplates) {
+    return NextResponse.json({ error: "Modelos de refeição inválidos" }, { status: 400 });
   }
 
   try {
@@ -252,6 +402,14 @@ export async function PATCH(request: Request) {
           where: { key: META_SETTING_KEY },
           create: { key: META_SETTING_KEY, value: String(nextMeta) },
           update: { value: String(nextMeta) },
+        });
+      }
+
+      if (nextWeekdayGoals !== undefined) {
+        await tx.appSetting.upsert({
+          where: { key: WEEKDAY_GOALS_SETTING_KEY },
+          create: { key: WEEKDAY_GOALS_SETTING_KEY, value: JSON.stringify(nextWeekdayGoals) },
+          update: { value: JSON.stringify(nextWeekdayGoals) },
         });
       }
 
@@ -321,6 +479,14 @@ export async function PATCH(request: Request) {
           update: {
             weight: nextWeight.weight,
           },
+        });
+      }
+
+      if (nextMealTemplates !== undefined) {
+        await tx.appSetting.upsert({
+          where: { key: MEAL_TEMPLATES_SETTING_KEY },
+          create: { key: MEAL_TEMPLATES_SETTING_KEY, value: JSON.stringify(nextMealTemplates) },
+          update: { value: JSON.stringify(nextMealTemplates) },
         });
       }
     });
