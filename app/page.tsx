@@ -54,6 +54,7 @@ export default function HomePage() {
   const [recentFoodIds, setRecentFoodIds] = useState<string[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<Refeicao>("BREAKFAST");
+  const [trackerError, setTrackerError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -70,7 +71,11 @@ export default function HomePage() {
       const nextLogs = { ...snapshot.logs, [todayKey]: todayState };
 
       if (!maybeToday) {
-        void patchTracker({ daily: todayState });
+        void patchTracker({ daily: todayState }).then((ok) => {
+          if (!ok) {
+            setTrackerError("Nao foi possivel inicializar o dia atual no banco de dados.");
+          }
+        });
       }
 
       if (!active) {
@@ -81,6 +86,7 @@ export default function HomePage() {
       setDaily(todayState);
       setYesterdayItems(snapshot.logs[yesterdayKey]?.items ?? []);
       setRecentFoodIds(parseRecentIds());
+      setTrackerError(null);
     };
 
     void loadTracker().catch(() => {
@@ -93,6 +99,7 @@ export default function HomePage() {
       setLogsMap({ [fallback.dateKey]: fallback });
       setYesterdayItems([]);
       setRecentFoodIds(parseRecentIds());
+      setTrackerError("Os dados do banco não puderam ser carregados agora.");
     });
 
     void fetch("/api/foods")
@@ -118,10 +125,15 @@ export default function HomePage() {
 
         if (parsed.length > 0) {
           setFoods(parsed);
+          setTrackerError(null);
         }
       })
       .catch(() => {
         setFoods(buildInitialFoods());
+        setTrackerError(
+          (current) =>
+            current ?? "A lista exibida esta apenas em modo local temporario. Novos dados nao serao persistidos enquanto o banco nao responder.",
+        );
       });
 
     return () => {
@@ -137,7 +149,9 @@ export default function HomePage() {
 
       const next = updater(prev);
       setLogsMap((current) => ({ ...current, [next.dateKey]: next }));
-      void patchTracker({ daily: next });
+      void patchTracker({ daily: next }).then((ok) => {
+        setTrackerError(ok ? null : "Nao foi possivel salvar esta refeicao no banco de dados.");
+      });
       return next;
     });
   };
@@ -206,7 +220,9 @@ export default function HomePage() {
   };
 
   const applyDefaultGoal = () => {
-    void patchTracker({ meta: DEFAULT_META_KCAL });
+    void patchTracker({ meta: DEFAULT_META_KCAL }).then((ok) => {
+      setTrackerError(ok ? null : "Nao foi possivel salvar a meta diaria no banco de dados.");
+    });
     updateDaily((prev) => ({
       ...prev,
       meta: DEFAULT_META_KCAL,
@@ -310,6 +326,12 @@ export default function HomePage() {
       <div className="animate-enter-1">
         <Header />
       </div>
+
+      {trackerError ? (
+        <section className="animate-enter-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {trackerError}
+        </section>
+      ) : null}
 
       <section className="grid gap-2.5 sm:grid-cols-3 sm:gap-3">
         {summaryCards.map((card, index) => {

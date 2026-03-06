@@ -1,7 +1,7 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { initialFoods } from "@/lib/data";
-import { memoryDb } from "@/lib/in-memory-db";
 import { prisma } from "@/lib/prisma";
 
 type FoodPayload = {
@@ -14,6 +14,8 @@ type FoodPayload = {
   fotoUrl?: string | null;
   favoritos?: boolean;
 };
+
+const FOODS_SEED_KEY = "foods-seeded-at";
 
 function toNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") {
@@ -51,23 +53,39 @@ function parsePayload(raw: unknown): FoodPayload | null {
 }
 
 async function ensureSeedData() {
-  const total = await prisma.food.count();
-  if (total > 0) {
-    return;
-  }
+  await prisma.$transaction(
+    async (tx) => {
+      const seedState = await tx.appSetting.findUnique({ where: { key: FOODS_SEED_KEY } });
+      if (seedState) {
+        return;
+      }
 
-  await prisma.food.createMany({
-    data: initialFoods.map((food) => ({
-      name: food.name,
-      porcao: food.porcao,
-      kcalPorcao: food.kcalPorcao,
-      proteina: food.proteina ?? null,
-      carboidrato: food.carboidrato ?? null,
-      gordura: food.gordura ?? null,
-      fotoUrl: food.fotoUrl ?? null,
-      favoritos: Boolean(food.favoritos),
-    })),
-  });
+      const total = await tx.food.count();
+      if (total === 0) {
+        await tx.food.createMany({
+          data: initialFoods.map((food) => ({
+            name: food.name,
+            porcao: food.porcao,
+            kcalPorcao: food.kcalPorcao,
+            proteina: food.proteina ?? null,
+            carboidrato: food.carboidrato ?? null,
+            gordura: food.gordura ?? null,
+            fotoUrl: food.fotoUrl ?? null,
+            favoritos: Boolean(food.favoritos),
+          })),
+        });
+      }
+
+      await tx.appSetting.upsert({
+        where: { key: FOODS_SEED_KEY },
+        create: { key: FOODS_SEED_KEY, value: new Date().toISOString() },
+        update: { value: new Date().toISOString() },
+      });
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    },
+  );
 }
 
 export async function GET(request: Request) {
@@ -90,7 +108,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(foods);
   } catch {
-    return NextResponse.json(memoryDb.listFoods(query));
+    return NextResponse.json({ error: "Falha ao carregar alimentos do banco de dados" }, { status: 500 });
   }
 }
 
@@ -104,7 +122,6 @@ export async function POST(request: Request) {
     const created = await prisma.food.create({ data: payload });
     return NextResponse.json(created, { status: 201 });
   } catch {
-    const created = memoryDb.createFood(payload);
-    return NextResponse.json(created, { status: 201 });
+    return NextResponse.json({ error: "Falha ao salvar alimento no banco de dados" }, { status: 500 });
   }
 }

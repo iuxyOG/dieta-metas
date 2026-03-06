@@ -4,8 +4,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm run start",
-    "healthcheckPath": "/login",
+    "startCommand": "npm run railway:start",
+    "healthcheckPath": "/api/health",
     "healthcheckTimeout": 120
   }
 }

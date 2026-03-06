@@ -81,7 +81,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: var(--font-inter), "Inter", sans-serif;
+    font-family: var(--font-sans), sans-serif;
     background-image: linear-gradient(145deg, var(--app-grad-1) 0%, var(--app-grad-2) 42%, var(--app-grad-3) 100%);
     position: relative;
     isolation: isolate;

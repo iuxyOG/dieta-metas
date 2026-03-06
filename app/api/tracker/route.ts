@@ -187,14 +187,7 @@ export async function GET() {
     const snapshot = await loadSnapshot();
     return NextResponse.json(sanitizeSnapshot(snapshot));
   } catch {
-    return NextResponse.json(
-      {
-        meta: DEFAULT_META_KCAL,
-        logs: {},
-        weeklyGoals: {},
-        weights: [],
-      } satisfies TrackerSnapshotResponse,
-    );
+    return NextResponse.json({ error: "Falha ao carregar dados do banco de dados" }, { status: 500 });
   }
 }
 

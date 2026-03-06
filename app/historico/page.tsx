@@ -144,6 +144,7 @@ export default function HistoricoPage() {
   const [weekGoalInput, setWeekGoalInput] = useState(String(DEFAULT_META_KCAL * 7));
   const [weightInput, setWeightInput] = useState("");
   const [weightDate, setWeightDate] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -159,6 +160,7 @@ export default function HistoricoPage() {
         setWeightEntries(snapshot.weights);
         setDailyMeta(snapshot.meta);
         setWeightDate(toDateKey());
+        setErrorMessage(null);
       })
       .catch(() => {
         if (!active) {
@@ -169,6 +171,7 @@ export default function HistoricoPage() {
         setWeightEntries([]);
         setDailyMeta(DEFAULT_META_KCAL);
         setWeightDate(toDateKey());
+        setErrorMessage("Nao foi possivel carregar o historico salvo no banco.");
       });
 
     return () => {
@@ -293,9 +296,15 @@ export default function HistoricoPage() {
     });
 
     if (!ok) {
-      const snapshot = await fetchTrackerSnapshot();
-      setWeeklyGoals(snapshot.weeklyGoals);
+      setErrorMessage("Nao foi possivel salvar a meta semanal no banco.");
+      try {
+        const snapshot = await fetchTrackerSnapshot();
+        setWeeklyGoals(snapshot.weeklyGoals);
+      } catch {}
+      return;
     }
+
+    setErrorMessage(null);
   };
 
   const registerWeight = async () => {
@@ -331,9 +340,15 @@ export default function HistoricoPage() {
     });
 
     if (!ok) {
-      const snapshot = await fetchTrackerSnapshot();
-      setWeightEntries(snapshot.weights);
+      setErrorMessage("Nao foi possivel salvar o peso no banco.");
+      try {
+        const snapshot = await fetchTrackerSnapshot();
+        setWeightEntries(snapshot.weights);
+      } catch {}
+      return;
     }
+
+    setErrorMessage(null);
   };
 
   const chartMeta = useMemo(() => buildMetaChartPaths(days30), [days30]);
@@ -348,6 +363,12 @@ export default function HistoricoPage() {
   return (
     <main className="mx-auto w-full max-w-6xl space-y-4 p-3 pb-8 sm:p-4 md:p-6">
       <Header />
+
+      {errorMessage ? (
+        <section className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </section>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card className="rounded-[26px] border-borda/80 bg-white/85 dark:border-border dark:bg-card/90">

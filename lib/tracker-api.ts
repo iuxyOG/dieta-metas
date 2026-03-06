@@ -30,13 +30,6 @@ export type TrackerPatchPayload = {
   };
 };
 
-const FALLBACK_SNAPSHOT: TrackerSnapshot = {
-  meta: DEFAULT_META_KCAL,
-  logs: {},
-  weeklyGoals: {},
-  weights: [],
-};
-
 export async function fetchTrackerSnapshot(): Promise<TrackerSnapshot> {
   const response = await fetch("/api/tracker", {
     method: "GET",
@@ -45,12 +38,12 @@ export async function fetchTrackerSnapshot(): Promise<TrackerSnapshot> {
   });
 
   if (!response.ok) {
-    return FALLBACK_SNAPSHOT;
+    throw new Error("Falha ao carregar tracker");
   }
 
   const payload = (await response.json().catch(() => null)) as TrackerSnapshot | null;
   if (!payload || typeof payload !== "object") {
-    return FALLBACK_SNAPSHOT;
+    throw new Error("Payload de tracker invalido");
   }
 
   const meta = Number(payload.meta);

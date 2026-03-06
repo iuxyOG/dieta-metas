@@ -15,6 +15,7 @@ const THEME_STORAGE_KEY = "calorias.theme.v1";
 export default function ConfigPage() {
   const [meta, setMeta] = useState(String(DEFAULT_META_KCAL));
   const [isDark, setIsDark] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -25,12 +26,14 @@ export default function ConfigPage() {
           return;
         }
         setMeta(String(snapshot.meta));
+        setErrorMessage(null);
       })
       .catch(() => {
         if (!active) {
           return;
         }
         setMeta(String(DEFAULT_META_KCAL));
+        setErrorMessage("Nao foi possivel carregar a configuracao salva no banco.");
       });
 
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -44,27 +47,35 @@ export default function ConfigPage() {
   }, []);
 
   const saveMeta = async () => {
-    const parsed = Number(meta);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return;
-    }
+    try {
+      const parsed = Number(meta);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return;
+      }
 
-    const normalizedMeta = Math.round(parsed);
-    setMeta(String(normalizedMeta));
+      const normalizedMeta = Math.round(parsed);
+      setMeta(String(normalizedMeta));
 
-    const snapshot = await fetchTrackerSnapshot();
-    const todayKey = toDateKey();
-    const today = snapshot.logs[todayKey] ?? buildStarterDay(todayKey, normalizedMeta);
-    const ok = await patchTracker({
-      meta: normalizedMeta,
-      daily: {
-        ...today,
+      const snapshot = await fetchTrackerSnapshot();
+      const todayKey = toDateKey();
+      const today = snapshot.logs[todayKey] ?? buildStarterDay(todayKey, normalizedMeta);
+      const ok = await patchTracker({
         meta: normalizedMeta,
-      },
-    });
+        daily: {
+          ...today,
+          meta: normalizedMeta,
+        },
+      });
 
-    if (!ok) {
-      setMeta(String(snapshot.meta));
+      if (!ok) {
+        setMeta(String(snapshot.meta));
+        setErrorMessage("Nao foi possivel salvar a meta diaria no banco.");
+        return;
+      }
+
+      setErrorMessage(null);
+    } catch {
+      setErrorMessage("Nao foi possivel carregar os dados atuais antes de salvar.");
     }
   };
 
@@ -76,42 +87,53 @@ export default function ConfigPage() {
   };
 
   const exportCsv = async () => {
-    const snapshot = await fetchTrackerSnapshot();
-    const today = snapshot.logs[toDateKey()];
-    if (!today) {
-      return;
+    try {
+      const snapshot = await fetchTrackerSnapshot();
+      const today = snapshot.logs[toDateKey()];
+      if (!today) {
+        return;
+      }
+
+      const headers = ["refeicao", "alimento", "porcao", "quantidade", "kcal", "proteina", "carboidrato", "gordura"];
+      const rows = today.items.map((item) => [
+        item.refeicao,
+        item.name,
+        item.porcao,
+        String(item.quantidade),
+        String((item.kcalPorcao * item.quantidade).toFixed(1)),
+        String(item.proteina.toFixed(1)),
+        String(item.carboidrato.toFixed(1)),
+        String(item.gordura.toFixed(1)),
+      ]);
+
+      const csv = [headers, ...rows]
+        .map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(","))
+        .join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `calorias-${today.dateKey}.csv`;
+      link.click();
+
+      URL.revokeObjectURL(url);
+      setErrorMessage(null);
+    } catch {
+      setErrorMessage("Nao foi possivel carregar os dados do dia para exportacao.");
     }
-
-    const headers = ["refeicao", "alimento", "porcao", "quantidade", "kcal", "proteina", "carboidrato", "gordura"];
-    const rows = today.items.map((item) => [
-      item.refeicao,
-      item.name,
-      item.porcao,
-      String(item.quantidade),
-      String((item.kcalPorcao * item.quantidade).toFixed(1)),
-      String(item.proteina.toFixed(1)),
-      String(item.carboidrato.toFixed(1)),
-      String(item.gordura.toFixed(1)),
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(","))
-      .join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `calorias-${today.dateKey}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(url);
   };
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-4 p-4 pb-8 md:p-6">
       <Header />
+
+      {errorMessage ? (
+        <section className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </section>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="rounded-3xl border-borda/80 bg-white/80 dark:border-border dark:bg-card/90">

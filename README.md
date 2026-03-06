@@ -32,12 +32,13 @@ Obrigatórias:
 npm run lint
 npm run build
 npm run db:push
+npm run db:migrate:deploy
 npm run db:studio
 ```
 
 ## Deploy no Railway (pronto)
 
-O projeto já está preparado com `railway.json` e `postinstall` do Prisma.
+O projeto já está preparado com `railway.json`, `postinstall` do Prisma e migração inicial versionada.
 
 ### 1. Criar serviço no Railway
 
@@ -53,12 +54,9 @@ O projeto já está preparado com `railway.json` e `postinstall` do Prisma.
 
 ### 3. Primeiro deploy
 
-- Deploy normal (build/start já configurados).
-- Após o deploy, abra o shell do serviço e rode uma vez:
-
-```bash
-npm run db:push
-```
+- Deploy normal.
+- O Railway sobe com `npm run railway:start`, que executa `prisma migrate deploy` antes do `next start`.
+- O healthcheck consulta `/api/health`, então o serviço só fica saudável quando app e banco estiverem respondendo.
 
 ### 4. Acessar
 
@@ -68,4 +66,5 @@ npm run db:push
 ## Observação de dados
 
 - Persistência principal no PostgreSQL (Prisma): alimentos, metas, logs diários, metas semanais e histórico de peso.
+- A API não usa mais fallback em memória para escrita, então qualquer falha de banco aparece explicitamente em vez de “salvar localmente”.
 - Tema (`claro/escuro`) e lista de recentes seguem no `localStorage` do navegador (preferência do aparelho).

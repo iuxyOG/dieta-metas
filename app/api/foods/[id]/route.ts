@@ -1,6 +1,6 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { memoryDb } from "@/lib/in-memory-db";
 import { prisma } from "@/lib/prisma";
 
 type FoodUpdatePayload = {
@@ -78,6 +78,10 @@ function parsePayload(raw: unknown): FoodUpdatePayload | null {
   return payload;
 }
 
+function isPrismaNotFoundError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025";
+}
+
 export async function PATCH(request: Request, context: { params: { id: string } }) {
   const foodId = context.params.id;
   const payload = parsePayload(await request.json());
@@ -93,13 +97,12 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     });
 
     return NextResponse.json(updated);
-  } catch {
-    const updated = memoryDb.updateFood(foodId, payload);
-    if (!updated) {
+  } catch (error) {
+    if (isPrismaNotFoundError(error)) {
       return NextResponse.json({ error: "Alimento não encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json(updated);
+    return NextResponse.json({ error: "Falha ao atualizar alimento no banco de dados" }, { status: 500 });
   }
 }
 
@@ -109,12 +112,11 @@ export async function DELETE(_request: Request, context: { params: { id: string 
   try {
     await prisma.food.delete({ where: { id: foodId } });
     return NextResponse.json({ ok: true });
-  } catch {
-    const deleted = memoryDb.deleteFood(foodId);
-    if (!deleted) {
+  } catch (error) {
+    if (isPrismaNotFoundError(error)) {
       return NextResponse.json({ error: "Alimento não encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ error: "Falha ao remover alimento do banco de dados" }, { status: 500 });
   }
 }

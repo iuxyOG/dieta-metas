@@ -3,7 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE_NAME, isSafeRedirectPath, verifySessionToken } from "@/lib/auth";
 
 function isPublicPath(pathname: string) {
-  return pathname === "/login" || pathname.startsWith("/api/auth/login") || pathname.startsWith("/api/auth/logout");
+  return (
+    pathname === "/login" ||
+    pathname === "/api/health" ||
+    pathname.startsWith("/api/auth/login") ||
+    pathname.startsWith("/api/auth/logout")
+  );
 }
 
 export async function middleware(request: NextRequest) {

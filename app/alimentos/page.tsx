@@ -60,16 +60,19 @@ export default function AlimentosPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fetchFoods = useCallback(async () => {
     const response = await fetch(`/api/foods${query ? `?q=${encodeURIComponent(query)}` : ""}`);
     if (!response.ok) {
+      setErrorMessage("Nao foi possivel carregar a lista de alimentos do banco.");
       return;
     }
 
     const data = (await response.json()) as FoodRecord[];
     if (Array.isArray(data)) {
       setFoods(data);
+      setErrorMessage(null);
     }
   }, [query]);
 
@@ -117,36 +120,56 @@ export default function AlimentosPage() {
 
     setSaving(false);
     if (!response.ok) {
+      setErrorMessage("Nao foi possivel salvar este alimento no banco.");
       return;
     }
 
     setEditingId(null);
     setForm(emptyForm);
+    setErrorMessage(null);
     await fetchFoods();
   };
 
   const toggleFavorite = async (food: FoodRecord) => {
-    await fetch(`/api/foods/${food.id}`, {
+    const response = await fetch(`/api/foods/${food.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ favoritos: !food.favoritos }),
     });
 
+    if (!response.ok) {
+      setErrorMessage("Nao foi possivel atualizar o favorito no banco.");
+      return;
+    }
+
+    setErrorMessage(null);
     await fetchFoods();
   };
 
   const removeFood = async (id: string) => {
-    await fetch(`/api/foods/${id}`, { method: "DELETE" });
+    const response = await fetch(`/api/foods/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      setErrorMessage("Nao foi possivel remover este alimento do banco.");
+      return;
+    }
+
     if (editingId === id) {
       setEditingId(null);
       setForm(emptyForm);
     }
+    setErrorMessage(null);
     await fetchFoods();
   };
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-4 p-4 pb-8 md:p-6">
       <Header />
+
+      {errorMessage ? (
+        <section className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </section>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.05fr_1fr]">
         <Card className="rounded-3xl border-borda/80 bg-white/80 dark:border-border dark:bg-card/90">

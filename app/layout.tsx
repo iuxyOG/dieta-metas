@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
+const geistSans = localFont({
+  src: "./fonts/GeistVF.woff",
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const geistMono = localFont({
+  src: "./fonts/GeistMonoVF.woff",
+  variable: "--font-mono",
   display: "swap",
 });
 
@@ -42,7 +48,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitializer }} />
       </head>
-      <body className={`${inter.variable} min-h-screen`}>{children}</body>
+      <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen`}>{children}</body>
     </html>
   );
 }
